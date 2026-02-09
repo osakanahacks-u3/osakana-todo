@@ -86,7 +86,7 @@ async function createMainPanel() {
 /**
  * タスク一覧パネルを作成
  */
-function createTaskListPanel(tasks, title = 'タスク一覧', page = 1, totalPages = 1) {
+function createTaskListPanel(tasks, title = 'タスク一覧', page = 1, totalPages = 1, filterContext = null) {
   if (tasks.length === 0) {
     const embed = new EmbedBuilder()
       .setColor(0x95a5a6)
@@ -145,10 +145,14 @@ function createTaskListPanel(tasks, title = 'タスク一覧', page = 1, totalPa
     components.push(selectRow);
   }
 
+  const sortCustomId = filterContext 
+    ? `panel_sort:${JSON.stringify(filterContext)}`
+    : 'panel_sort';
+  // customIdは100文字制限があるので切り詰め
   const sortRow = new ActionRowBuilder()
     .addComponents(
       new StringSelectMenuBuilder()
-        .setCustomId('panel_sort')
+        .setCustomId(sortCustomId.slice(0, 100))
         .setPlaceholder('🔀 並び替え')
         .addOptions([
           { label: 'ID順', value: 'sort_id', emoji: '🔢', description: 'タスクIDの昇順' },

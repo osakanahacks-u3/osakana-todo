@@ -1,6 +1,7 @@
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, PermissionFlagsBits } = require('discord.js');
 const { TaskModel, UserModel } = require('../../database/models');
 const { createMainPanel, createTaskListPanel, createTaskDetailPanel, createStatsPanel } = require('../utils/panels');
+const { db } = require('../../database/init');
 
 const STATUS_LABELS = {
   pending: '⏳ 未処理',
@@ -256,6 +257,118 @@ module.exports = async function(interaction) {
     }
     if (client.updateMainPanel) {
       client.updateMainPanel();
+    }
+    return;
+  }
+
+  // インポートキャンセル
+  if (customId === 'import_cancel') {
+    await interaction.update({
+      content: '❌ インポートをキャンセルしました',
+      embeds: [],
+      components: []
+    });
+    return;
+  }
+
+  // インポート確認
+  if (customId.startsWith('import_confirm:')) {
+    const parts = customId.split(':');
+    const userId = parts[1];
+    const fileUrl = parts.slice(2).join(':');
+
+    // 操作者チェック
+    if (interaction.user.id !== userId) {
+      await interaction.reply({
+        content: '❌ この操作はインポートを開始した本人のみ実行できます',
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+
+    // 管理者チェック
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      await interaction.update({
+        content: '❌ インポートはサーバー管理者のみ実行できます',
+        embeds: [],
+        components: []
+      });
+      return;
+    }
+
+    await interaction.update({
+      content: '⏳ インポート処理中...',
+      embeds: [],
+      components: []
+    });
+
+    try {
+      const response = await fetch(fileUrl);
+      let text = await response.text();
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      const data = JSON.parse(text);
+
+      if (!data.tasks || !Array.isArray(data.tasks)) {
+        await interaction.editReply({ content: '❌ 無効なファイル形式です' });
+        return;
+      }
+
+      // インポート実行（トランザクション内）
+      const importTransaction = db.transaction(() => {
+        // 既存タスクと関連データを削除
+        db.prepare('DELETE FROM task_comments').run();
+        db.prepare('DELETE FROM task_assignees').run();
+        db.prepare('DELETE FROM task_assigned_groups').run();
+        db.prepare('DELETE FROM tasks').run();
+
+        // 操作者をcreated_byとして使うためupsert
+        const creator = UserModel.upsert(
+          interaction.user.id,
+          interaction.user.username,
+          interaction.user.discriminator,
+          interaction.user.avatar
+        );
+
+        let imported = 0;
+        for (const task of data.tasks) {
+          const validStatuses = ['pending', 'in_progress', 'on_hold', 'completed', 'other'];
+          const validPriorities = ['low', 'medium', 'high', 'urgent'];
+          const status = validStatuses.includes(task.status) ? task.status : 'pending';
+          const priority = validPriorities.includes(task.priority) ? task.priority : 'medium';
+
+          TaskModel.create({
+            title: task.title || '無題',
+            description: task.description || null,
+            status,
+            priority,
+            dueDate: task.dueDate || null,
+            assignedType: task.assignedType || null,
+            createdBy: creator.id
+          });
+          imported++;
+        }
+        return imported;
+      });
+
+      const importedCount = importTransaction();
+
+      const embed = new EmbedBuilder()
+        .setTitle('✅ インポート完了')
+        .setColor(0x2ecc71)
+        .addFields(
+          { name: '📥 インポート件数', value: `${importedCount}件`, inline: true },
+        )
+        .setTimestamp();
+
+      await interaction.editReply({ content: null, embeds: [embed] });
+
+      // メインパネル更新
+      if (client.updateMainPanel) {
+        client.updateMainPanel();
+      }
+    } catch (e) {
+      console.error('Import error:', e);
+      await interaction.editReply({ content: '❌ インポート処理中にエラーが発生しました' });
     }
     return;
   }

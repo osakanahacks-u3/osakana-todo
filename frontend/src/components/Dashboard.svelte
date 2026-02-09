@@ -19,6 +19,10 @@
   let sidebarOpen = $state(false);
   let showExportMenu = $state(false);
   let filterBarOpen = $state(false);
+  let showImportConfirm = $state(false);
+  let importData = $state<any>(null);
+  let importLoading = $state(false);
+  let importFileInput = $state<HTMLInputElement | null>(null);
 
   onMount(async () => {
     if (!auth.isLoggedIn()) {
@@ -102,6 +106,61 @@
     } catch (e) {
       console.error('Export failed:', e);
     }
+  }
+
+  function handleImportClick() {
+    showExportMenu = false;
+    importFileInput?.click();
+  }
+
+  async function handleImportFile(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.json')) {
+      alert('JSONファイルのみインポートできます');
+      input.value = '';
+      return;
+    }
+
+    try {
+      let text = await file.text();
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      const data = JSON.parse(text);
+      if (!data.tasks || !Array.isArray(data.tasks)) {
+        alert('無効なファイル形式です。tasks 配列が必要です');
+        input.value = '';
+        return;
+      }
+      importData = data;
+      showImportConfirm = true;
+    } catch (e) {
+      alert('JSONの解析に失敗しました');
+    }
+    input.value = '';
+  }
+
+  async function executeImport() {
+    if (!importData) return;
+    importLoading = true;
+    try {
+      const result = await exportTasks.importJson(importData);
+      showImportConfirm = false;
+      importData = null;
+      taskListVersion++;
+      await refreshStats();
+      alert(`✅ ${result.imported}件のタスクをインポートしました`);
+    } catch (e: any) {
+      alert(`インポートエラー: ${e.message}`);
+    } finally {
+      importLoading = false;
+    }
+  }
+
+  function cancelImport() {
+    showImportConfirm = false;
+    importData = null;
   }
 
   function toggleSidebar() {
@@ -234,9 +293,18 @@
                   <button onclick={() => handleExport('txt')}>📄 TXT形式</button>
                   <button onclick={() => handleExport('csv')}>📊 CSV形式</button>
                   <button onclick={() => handleExport('json')}>📋 JSON形式</button>
+                  <div class="dropdown-divider"></div>
+                  <button onclick={handleImportClick}>📤 インポート</button>
                 </div>
               {/if}
             </div>
+            <input 
+              type="file" 
+              accept=".json" 
+              class="hidden-input" 
+              bind:this={importFileInput}
+              onchange={handleImportFile}
+            />
           {/if}
         </div>
       </header>
@@ -395,6 +463,43 @@
         onClose={handleTaskClosed}
         onUpdated={handleTaskUpdated}
       />
+    {/if}
+
+    {#if showImportConfirm}
+      <div class="modal-overlay" onclick={cancelImport} onkeydown={(e) => e.key === 'Escape' && cancelImport()} role="dialog" tabindex="-1">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <div class="import-confirm-modal" onclick={(e) => e.stopPropagation()} role="document">
+          <div class="import-warning-icon">⚠️</div>
+          <h3>インポート確認</h3>
+          <p class="import-warning-text">
+            <strong>この操作は既存のすべてのタスクを削除し、インポートデータで上書きします。</strong><br>
+            この操作は取り消せません。
+          </p>
+          <div class="import-stats">
+            <div class="import-stat">
+              <span class="import-stat-icon">🗑️</span>
+              <span>削除されるタスク: <strong>{stats?.total ?? 0}件</strong></span>
+            </div>
+            <div class="import-stat">
+              <span class="import-stat-icon">📥</span>
+              <span>インポートされるタスク: <strong>{importData?.tasks?.length ?? 0}件</strong></span>
+            </div>
+          </div>
+          <div class="import-actions">
+            <button class="btn btn-danger" onclick={executeImport} disabled={importLoading}>
+              {#if importLoading}
+                ⏳ 処理中...
+              {:else}
+                ⚠️ はい、インポートする
+              {/if}
+            </button>
+            <button class="btn btn-secondary" onclick={cancelImport} disabled={importLoading}>
+              ❌ いいえ、キャンセル
+            </button>
+          </div>
+        </div>
+      </div>
     {/if}
   </div>
 {/if}
@@ -804,5 +909,126 @@
   @media (max-width: 480px) {
     .main-header h1 { font-size: 1rem; }
     .sort-btn { padding: 5px 8px; font-size: 11px; }
+  }
+
+  /* Hidden file input */
+  .hidden-input {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* Dropdown divider */
+  .dropdown-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 4px 0;
+  }
+
+  /* Import Confirm Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 20px;
+  }
+
+  .import-confirm-modal {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .import-warning-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+  }
+
+  .import-confirm-modal h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+    color: var(--text-primary);
+  }
+
+  .import-warning-text {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 20px;
+  }
+
+  .import-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 24px;
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    text-align: left;
+  }
+
+  .import-stat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text-primary);
+  }
+
+  .import-stat-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .import-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .btn-danger {
+    background: var(--danger);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background: #c33;
+  }
+
+  .btn-danger:disabled,
+  .btn-secondary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  @media (max-width: 480px) {
+    .import-confirm-modal {
+      padding: 24px 20px;
+    }
+
+    .import-actions {
+      flex-direction: column;
+    }
   }
 </style>

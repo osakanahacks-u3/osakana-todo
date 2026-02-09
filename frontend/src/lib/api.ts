@@ -263,5 +263,27 @@ export const exportTasks = {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  },
+
+  async importJson(data: { tasks: any[] }) {
+    const token = getToken();
+    const response = await fetch(`${API_BASE}/api/export/import`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(data)
+    });
+    if (response.status === 401) {
+      removeToken();
+      if (typeof window !== 'undefined') window.location.href = '/login';
+      throw new Error('Unauthorized');
+    }
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(err.error || 'Import failed');
+    }
+    return response.json();
   }
 };
