@@ -1,5 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
-const { TaskModel, UserModel } = require('../../database/models');
+const { TaskModel, UserModel, GroupModel } = require('../../database/models');
 
 /**
  * 担当者表示文字列を生成（複数ユーザー対応）
@@ -7,9 +7,14 @@ const { TaskModel, UserModel } = require('../../database/models');
 function getAssigneeDisplay(task) {
   if (!task) return '未割当';
   if (task.assigned_type === 'all') return '👥 全員';
+  const parts = [];
   if (task.assigned_users && task.assigned_users.length > 0) {
-    return task.assigned_users.map(u => `👤 ${u.username}`).join(', ');
+    parts.push(...task.assigned_users.map(u => `👤 ${u.username}`));
   }
+  if (task.assigned_groups && task.assigned_groups.length > 0) {
+    parts.push(...task.assigned_groups.map(g => `📁 ${g.name}`));
+  }
+  if (parts.length > 0) return parts.join(', ');
   if (task.assigned_user_name) return `👤 ${task.assigned_user_name}`;
   if (task.assigned_group_name) return `📁 ${task.assigned_group_name}`;
   return '未割当';
@@ -230,7 +235,9 @@ function createTaskDetailPanel(task) {
     .addComponents(
       new StringSelectMenuBuilder()
         .setCustomId(`task_assign_change:${task.id}`)
-        .setPlaceholder('👤 担当者変更')
+        .setPlaceholder('👤 担当者変更（複数選択可）')
+        .setMinValues(1)
+        .setMaxValues(Math.max(1, buildAssigneeOptions(task).length))
         .addOptions(buildAssigneeOptions(task)),
     );
 
@@ -326,9 +333,22 @@ function buildAssigneeOptions(task) {
     description: '全メンバーに割り当て',
   });
 
-  // 登録済みユーザー一覧
+  // グループ一覧
+  const groups = GroupModel.getAll();
+  for (const group of groups.slice(0, 10)) {
+    const isAssigned = task.assigned_groups?.some(g => g.id === group.id);
+    options.push({
+      label: `${group.name}`,
+      value: `assign_group:${group.id}`,
+      emoji: isAssigned ? '✅' : '📁',
+      description: isAssigned ? '現在担当グループ' : 'このグループに割り当て',
+    });
+  }
+
+  // ユーザー一覧
   const users = UserModel.getAll();
-  for (const user of users.slice(0, 23)) { // セレクトメニュー上限25 - 2
+  const maxUsers = 25 - options.length;
+  for (const user of users.slice(0, maxUsers)) {
     const isAssigned = task.assigned_users?.some(u => u.id === user.id);
     options.push({
       label: `${user.username}`,

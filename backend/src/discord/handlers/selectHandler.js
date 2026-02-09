@@ -126,7 +126,7 @@ module.exports = async function(interaction) {
     return;
   }
 
-  // 担当者変更
+  // 担当者変更（複数選択対応）
   if (customId.startsWith('task_assign_change:')) {
     const taskId = customId.replace('task_assign_change:', '');
     const task = TaskModel.findById(taskId);
@@ -136,20 +136,59 @@ module.exports = async function(interaction) {
       return;
     }
 
+    const values = interaction.values; // 複数選択
     let updateData = {};
     let changeDescription = '';
 
-    if (value === 'assign_none') {
-      updateData = { assignedType: null, assignedUserIds: [], assignedGroupId: null };
+    // 「未割当」「全員」が選ばれている場合はそれを優先
+    if (values.includes('assign_none')) {
+      updateData = { assignedType: null, assignedUserIds: [], assignedGroupIds: [] };
       changeDescription = '担当者を「未割当」に変更';
-    } else if (value === 'assign_all') {
-      updateData = { assignedType: 'all', assignedUserIds: [], assignedGroupId: null };
+    } else if (values.includes('assign_all')) {
+      updateData = { assignedType: 'all', assignedUserIds: [], assignedGroupIds: [] };
       changeDescription = '担当者を「全員」に変更';
-    } else if (value.startsWith('assign_user:')) {
-      const userId = parseInt(value.replace('assign_user:', ''));
-      updateData = { assignedType: 'user', assignedUserIds: [userId], assignedGroupId: null };
-      const assignedUser = UserModel.findById(userId);
-      changeDescription = `担当者を「${assignedUser?.username || '不明'}」に変更`;
+    } else {
+      // ユーザーとグループを分離
+      const userIds = [];
+      const groupIds = [];
+      for (const v of values) {
+        if (v.startsWith('assign_user:')) {
+          userIds.push(parseInt(v.replace('assign_user:', '')));
+        } else if (v.startsWith('assign_group:')) {
+          groupIds.push(parseInt(v.replace('assign_group:', '')));
+        }
+      }
+
+      // タイプを決定
+      let assignedType = null;
+      if (userIds.length > 0 && groupIds.length > 0) {
+        assignedType = 'user'; // 混合の場合もuser扱い（後方互換）
+      } else if (userIds.length > 0) {
+        assignedType = 'user';
+      } else if (groupIds.length > 0) {
+        assignedType = 'group';
+      }
+
+      updateData = { assignedType, assignedUserIds: userIds, assignedGroupIds: groupIds };
+
+      // 変更説明を構築
+      const parts = [];
+      if (userIds.length > 0) {
+        const names = userIds.map(id => {
+          const u = UserModel.findById(id);
+          return u?.username || '不明';
+        });
+        parts.push(names.join(', '));
+      }
+      if (groupIds.length > 0) {
+        const { GroupModel } = require('../../database/models');
+        const names = groupIds.map(id => {
+          const g = GroupModel.findById(id);
+          return g?.name || '不明';
+        });
+        parts.push(names.join(', '));
+      }
+      changeDescription = `担当者を「${parts.join(', ')}」に変更`;
     }
 
     TaskModel.update(taskId, updateData);

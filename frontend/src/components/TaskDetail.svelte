@@ -25,14 +25,14 @@
   let editDescription = $state('');
   let editPriority = $state('medium');
   let editDueDate = $state('');
-  let editAssignType = $state<'none' | 'user' | 'group' | 'all'>('none');
+  let editAssignType = $state<'none' | 'mixed' | 'all'>('none');
   let editAssignedUserIds = $state<string[]>([]);
-  let editAssignedGroupId = $state<string | null>(null);
+  let editAssignedGroupIds = $state<string[]>([]);
 
   // 表示モード用クイック割り当て
-  let quickAssignType = $state<'none' | 'user' | 'group' | 'all'>('none');
+  let quickAssignType = $state<'none' | 'mixed' | 'all'>('none');
   let quickAssignUserIds = $state<string[]>([]);
-  let quickAssignGroupId = $state<string | null>(null);
+  let quickAssignGroupIds = $state<string[]>([]);
 
   const STATUS_LABELS: Record<string, string> = {
     pending: '⏳ 未着手',
@@ -72,52 +72,56 @@
     editPriority = task.priority;
     editDueDate = task.due_date ? task.due_date.split('T')[0] : '';
     
+    const hasUsers = task.assigned_users && task.assigned_users.length > 0;
+    const hasGroups = task.assigned_groups && task.assigned_groups.length > 0;
+
     if (task.assigned_type === 'all') {
       editAssignType = 'all';
       editAssignedUserIds = [];
-    } else if (task.assigned_users && task.assigned_users.length > 0) {
-      editAssignType = 'user';
-      editAssignedUserIds = task.assigned_users.map((u: any) => String(u.id));
+      editAssignedGroupIds = [];
+    } else if (hasUsers || hasGroups) {
+      editAssignType = 'mixed';
+      editAssignedUserIds = hasUsers ? task.assigned_users.map((u: any) => String(u.id)) : [];
+      editAssignedGroupIds = hasGroups ? task.assigned_groups.map((g: any) => String(g.id)) : [];
     } else if (task.assigned_group_id) {
-      editAssignType = 'group';
-      editAssignedGroupId = task.assigned_group_id;
+      editAssignType = 'mixed';
+      editAssignedUserIds = [];
+      editAssignedGroupIds = [String(task.assigned_group_id)];
     } else {
       editAssignType = 'none';
       editAssignedUserIds = [];
+      editAssignedGroupIds = [];
     }
   }
 
   function initQuickAssign() {
     if (!task) return;
+    const hasUsers = task.assigned_users && task.assigned_users.length > 0;
+    const hasGroups = task.assigned_groups && task.assigned_groups.length > 0;
+
     if (task.assigned_type === 'all') {
       quickAssignType = 'all';
       quickAssignUserIds = [];
-      quickAssignGroupId = null;
-    } else if (task.assigned_users && task.assigned_users.length > 0) {
-      quickAssignType = 'user';
-      quickAssignUserIds = task.assigned_users.map((u: any) => String(u.id));
-      quickAssignGroupId = null;
+      quickAssignGroupIds = [];
+    } else if (hasUsers || hasGroups) {
+      quickAssignType = 'mixed';
+      quickAssignUserIds = hasUsers ? task.assigned_users.map((u: any) => String(u.id)) : [];
+      quickAssignGroupIds = hasGroups ? task.assigned_groups.map((g: any) => String(g.id)) : [];
     } else if (task.assigned_group_id) {
-      quickAssignType = 'group';
+      quickAssignType = 'mixed';
       quickAssignUserIds = [];
-      quickAssignGroupId = String(task.assigned_group_id);
+      quickAssignGroupIds = [String(task.assigned_group_id)];
     } else {
       quickAssignType = 'none';
       quickAssignUserIds = [];
-      quickAssignGroupId = null;
+      quickAssignGroupIds = [];
     }
   }
 
   async function handleQuickAssignType() {
     if (quickAssignType === 'none' || quickAssignType === 'all') {
       quickAssignUserIds = [];
-      quickAssignGroupId = null;
-      await saveQuickAssign();
-    }
-  }
-
-  async function handleQuickAssignGroup() {
-    if (quickAssignType === 'group' && quickAssignGroupId) {
+      quickAssignGroupIds = [];
       await saveQuickAssign();
     }
   }
@@ -130,16 +134,31 @@
     }
   }
 
+  function toggleQuickAssignGroup(groupId: string) {
+    if (quickAssignGroupIds.includes(groupId)) {
+      quickAssignGroupIds = quickAssignGroupIds.filter(id => id !== groupId);
+    } else {
+      quickAssignGroupIds = [...quickAssignGroupIds, groupId];
+    }
+  }
+
   async function applyQuickAssignUsers() {
     await saveQuickAssign();
   }
 
   async function saveQuickAssign() {
     try {
+      let resolvedType: string | null = null;
+      if (quickAssignType === 'all') resolvedType = 'all';
+      else if (quickAssignType === 'mixed') {
+        if (quickAssignUserIds.length > 0) resolvedType = 'user';
+        else if (quickAssignGroupIds.length > 0) resolvedType = 'group';
+      }
+
       await tasks.update(taskId, {
-        assignedType: quickAssignType === 'none' ? null : quickAssignType,
-        assignedUserIds: quickAssignType === 'user' ? quickAssignUserIds : [],
-        assignedGroupId: quickAssignType === 'group' ? quickAssignGroupId : null
+        assignedType: resolvedType,
+        assignedUserIds: quickAssignType === 'mixed' ? quickAssignUserIds : [],
+        assignedGroupIds: quickAssignType === 'mixed' ? quickAssignGroupIds : [],
       });
       task = await tasks.get(taskId);
       initQuickAssign();
@@ -164,9 +183,9 @@
         description: editDescription.trim() || null,
         priority: editPriority,
         dueDate: editDueDate || null,
-        assignedType: editAssignType === 'none' ? null : editAssignType,
-        assignedUserIds: editAssignType === 'user' ? editAssignedUserIds : [],
-        assignedGroupId: editAssignType === 'group' ? editAssignedGroupId : null
+        assignedType: editAssignType === 'none' ? null : (editAssignType === 'all' ? 'all' : (editAssignedUserIds.length > 0 ? 'user' : (editAssignedGroupIds.length > 0 ? 'group' : null))),
+        assignedUserIds: editAssignType === 'mixed' ? editAssignedUserIds : [],
+        assignedGroupIds: editAssignType === 'mixed' ? editAssignedGroupIds : [],
       });
       // 編集モードを解除し、タスクを再取得してインプレースで反映
       editMode = false;
@@ -227,9 +246,14 @@
   function getAssignee(): string {
     if (!task) return '';
     if (task.assigned_type === 'all') return '👥 全員';
+    const parts: string[] = [];
     if (task.assigned_users && task.assigned_users.length > 0) {
-      return task.assigned_users.map((u: any) => `👤 ${u.username}`).join(', ');
+      parts.push(...task.assigned_users.map((u: any) => `👤 ${u.username}`));
     }
+    if (task.assigned_groups && task.assigned_groups.length > 0) {
+      parts.push(...task.assigned_groups.map((g: any) => `📁 ${g.name}`));
+    }
+    if (parts.length > 0) return parts.join(', ');
     if (task.assigned_user_name) return `👤 ${task.assigned_user_name}`;
     if (task.assigned_group_name) return `📁 ${task.assigned_group_name}`;
     return '未割当';
@@ -310,15 +334,14 @@
             <div class="assign-options">
               <label><input type="radio" bind:group={editAssignType} value="none" /> 未割当</label>
               <label><input type="radio" bind:group={editAssignType} value="all" /> 全員</label>
-              <label><input type="radio" bind:group={editAssignType} value="user" /> ユーザー</label>
-              <label><input type="radio" bind:group={editAssignType} value="group" /> グループ</label>
+              <label><input type="radio" bind:group={editAssignType} value="mixed" /> ユーザー / グループ</label>
             </div>
           </div>
 
-          {#if editAssignType === 'user'}
+          {#if editAssignType === 'mixed'}
             <div class="form-group">
               <!-- svelte-ignore a11y_label_has_associated_control -->
-              <label>担当ユーザー（複数選択可）</label>
+              <label>👤 担当ユーザー（複数選択可）</label>
               <div class="user-checkboxes">
                 {#each allUsers as user}
                   <label class="checkbox-label">
@@ -340,17 +363,32 @@
                 {/each}
               </div>
             </div>
-          {/if}
-
-          {#if editAssignType === 'group'}
-            <div class="form-group">
-              <select bind:value={editAssignedGroupId}>
-                <option value={null}>選択</option>
-                {#each allGroups as group}
-                  <option value={group.id}>{group.name}</option>
-                {/each}
-              </select>
-            </div>
+            {#if allGroups.length > 0}
+              <div class="form-group">
+                <!-- svelte-ignore a11y_label_has_associated_control -->
+                <label>📁 担当グループ（複数選択可）</label>
+                <div class="user-checkboxes">
+                  {#each allGroups as group}
+                    <label class="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={editAssignedGroupIds.includes(String(group.id))}
+                        onchange={() => {
+                          const gid = String(group.id);
+                          if (editAssignedGroupIds.includes(gid)) {
+                            editAssignedGroupIds = editAssignedGroupIds.filter(id => id !== gid);
+                          } else {
+                            editAssignedGroupIds = [...editAssignedGroupIds, gid];
+                          }
+                        }}
+                        disabled={saving}
+                      />
+                      {group.name}
+                    </label>
+                  {/each}
+                </div>
+              </div>
+            {/if}
           {/if}
 
           <div class="edit-actions">
@@ -393,11 +431,11 @@
                   <select bind:value={quickAssignType} onchange={handleQuickAssignType}>
                     <option value="none">未割当</option>
                     <option value="all">👥 全員</option>
-                    <option value="user">👤 ユーザー</option>
-                    <option value="group">📁 グループ</option>
+                    <option value="mixed">👤 ユーザー / 📁 グループ</option>
                   </select>
-                  {#if quickAssignType === 'user'}
+                  {#if quickAssignType === 'mixed'}
                     <div class="quick-assign-users">
+                      <span class="quick-assign-section-label">👤 ユーザー</span>
                       {#each allUsers as user}
                         <label class="checkbox-label-small">
                           <input
@@ -408,16 +446,21 @@
                           {user.username}
                         </label>
                       {/each}
+                      {#if allGroups.length > 0}
+                        <span class="quick-assign-section-label">📁 グループ</span>
+                        {#each allGroups as group}
+                          <label class="checkbox-label-small">
+                            <input
+                              type="checkbox"
+                              checked={quickAssignGroupIds.includes(String(group.id))}
+                              onchange={() => toggleQuickAssignGroup(String(group.id))}
+                            />
+                            {group.name}
+                          </label>
+                        {/each}
+                      {/if}
                       <button class="btn btn-small btn-primary" onclick={applyQuickAssignUsers}>適用</button>
                     </div>
-                  {/if}
-                  {#if quickAssignType === 'group'}
-                    <select bind:value={quickAssignGroupId} onchange={handleQuickAssignGroup}>
-                      <option value="">グループを選択</option>
-                      {#each allGroups as group}
-                        <option value={String(group.id)}>{group.name}</option>
-                      {/each}
-                    </select>
                   {/if}
                 </div>
               </div>

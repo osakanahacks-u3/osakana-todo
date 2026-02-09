@@ -34,26 +34,32 @@ if (fs.existsSync(commandsPath)) {
 function getAssigneeMention(task) {
   if (!task) return '未割当';
   if (task.assigned_type === 'all') return '👥 全員';
+  const parts = [];
   if (task.assigned_type === 'user' && task.assigned_users && task.assigned_users.length > 0) {
-    return task.assigned_users.map(u => {
-      if (u.discord_id && u.discord_id !== 'system') return `<@${u.discord_id}>`;
-      return `👤 ${u.username || '不明'}`;
-    }).join(', ');
+    for (const u of task.assigned_users) {
+      if (u.discord_id && u.discord_id !== 'system') parts.push(`<@${u.discord_id}>`);
+      else parts.push(`👤 ${u.username || '不明'}`);
+    }
   }
-  // 後方互換: assigned_user_discord_id がカンマ区切りの場合
-  if (task.assigned_user_discord_id) {
+  // 後方互換: assigned_user_discord_id
+  if (parts.length === 0 && task.assigned_user_discord_id) {
     const ids = String(task.assigned_user_discord_id).split(',').filter(id => id && id !== 'system');
-    if (ids.length > 0) return ids.map(id => `<@${id}>`).join(', ');
-    const names = task.assigned_user_name || '不明';
-    return `👤 ${names}`;
+    if (ids.length > 0) parts.push(...ids.map(id => `<@${id}>`));
+    else if (task.assigned_user_name) parts.push(`👤 ${task.assigned_user_name}`);
   }
-  if (task.assigned_group_id) {
+  // 複数グループ対応
+  if (task.assigned_groups && task.assigned_groups.length > 0) {
+    for (const g of task.assigned_groups) {
+      if (g.discord_role_id) parts.push(`<@&${g.discord_role_id}>`);
+      else parts.push(`📁 ${g.name || '不明'}`);
+    }
+  } else if (parts.length === 0 && task.assigned_group_id) {
     const { GroupModel } = require('../database/models');
     const group = GroupModel.findById(task.assigned_group_id);
-    if (group && group.discord_role_id) return `<@&${group.discord_role_id}>`;
-    return `📁 ${task.assigned_group_name || group?.name || '不明'}`;
+    if (group && group.discord_role_id) parts.push(`<@&${group.discord_role_id}>`);
+    else parts.push(`📁 ${task.assigned_group_name || group?.name || '不明'}`);
   }
-  return '未割当';
+  return parts.length > 0 ? parts.join(', ') : '未割当';
 }
 
 /**
@@ -188,25 +194,30 @@ function notifyTaskDeleted(task, deletedByName) {
 function buildMentionForAssignee(task) {
   if (!task) return null;
   const mentions = [];
+  // ユーザーメンション
   if (task.assigned_users && task.assigned_users.length > 0) {
     for (const u of task.assigned_users) {
       if (u.discord_id && u.discord_id !== 'system') {
         mentions.push(`<@${u.discord_id}>`);
       }
     }
-    if (mentions.length > 0) return mentions.join(' ');
   }
   // 後方互換
-  if (task.assigned_user_discord_id) {
+  if (mentions.length === 0 && task.assigned_user_discord_id) {
     const ids = String(task.assigned_user_discord_id).split(',').filter(id => id && id !== 'system');
-    if (ids.length > 0) return ids.map(id => `<@${id}>`).join(' ');
+    if (ids.length > 0) mentions.push(...ids.map(id => `<@${id}>`));
   }
-  if (task.assigned_group_id) {
+  // グループメンション（複数対応）
+  if (task.assigned_groups && task.assigned_groups.length > 0) {
+    for (const g of task.assigned_groups) {
+      if (g.discord_role_id) mentions.push(`<@&${g.discord_role_id}>`);
+    }
+  } else if (task.assigned_group_id) {
     const { GroupModel } = require('../database/models');
     const group = GroupModel.findById(task.assigned_group_id);
-    if (group && group.discord_role_id) return `<@&${group.discord_role_id}>`;
+    if (group && group.discord_role_id) mentions.push(`<@&${group.discord_role_id}>`);
   }
-  return null;
+  return mentions.length > 0 ? mentions.join(' ') : null;
 }
 
 /**

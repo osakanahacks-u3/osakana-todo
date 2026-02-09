@@ -63,7 +63,7 @@ router.get('/:id', (req, res) => {
 
 // タスク作成
 router.post('/', (req, res) => {
-  const { title, description, priority, dueDate, assignedType, assignedUserIds, assignedUserId, assignedGroupId } = req.body;
+  const { title, description, priority, dueDate, assignedType, assignedUserIds, assignedUserId, assignedGroupId, assignedGroupIds } = req.body;
 
   if (!title) {
     return res.status(400).json({ error: 'Title is required' });
@@ -86,12 +86,18 @@ router.post('/', (req, res) => {
 
   // 複数ユーザーIDの解決: assignedUserIds 配列を優先、なければassignedUserIdから配列化
   let resolvedUserIds = [];
-  if (assignedType === 'user') {
-    if (Array.isArray(assignedUserIds) && assignedUserIds.length > 0) {
-      resolvedUserIds = assignedUserIds.map(id => parseInt(id)).filter(Boolean);
-    } else if (assignedUserId) {
-      resolvedUserIds = [parseInt(assignedUserId)];
-    }
+  if (Array.isArray(assignedUserIds) && assignedUserIds.length > 0) {
+    resolvedUserIds = assignedUserIds.map(id => parseInt(id)).filter(Boolean);
+  } else if (assignedUserId) {
+    resolvedUserIds = [parseInt(assignedUserId)];
+  }
+
+  // 複数グループIDの解決
+  let resolvedGroupIds = [];
+  if (Array.isArray(assignedGroupIds) && assignedGroupIds.length > 0) {
+    resolvedGroupIds = assignedGroupIds.map(id => parseInt(id)).filter(Boolean);
+  } else if (assignedGroupId) {
+    resolvedGroupIds = [parseInt(assignedGroupId)];
   }
 
   const task = TaskModel.create({
@@ -101,7 +107,8 @@ router.post('/', (req, res) => {
     dueDate,
     assignedType: assignedType || null,
     assignedUserIds: resolvedUserIds.length > 0 ? resolvedUserIds : undefined,
-    assignedGroupId: assignedGroupId ? parseInt(assignedGroupId) : null,
+    assignedGroupId: resolvedGroupIds.length > 0 ? resolvedGroupIds[0] : (assignedGroupId ? parseInt(assignedGroupId) : null),
+    assignedGroupIds: resolvedGroupIds.length > 0 ? resolvedGroupIds : undefined,
     createdBy
   });
 
@@ -132,7 +139,7 @@ router.put('/:id', (req, res) => {
     return res.status(404).json({ error: 'Task not found' });
   }
 
-  const { title, description, status, priority, dueDate, assignedType, assignedUserIds, assignedUserId, assignedGroupId } = req.body;
+  const { title, description, status, priority, dueDate, assignedType, assignedUserIds, assignedUserId, assignedGroupId, assignedGroupIds } = req.body;
 
   const updateData = {};
   if (title !== undefined) updateData.title = title;
@@ -141,7 +148,15 @@ router.put('/:id', (req, res) => {
   if (priority !== undefined) updateData.priority = priority;
   if (dueDate !== undefined) updateData.dueDate = dueDate;
   if (assignedType !== undefined) updateData.assignedType = assignedType;
-  if (assignedGroupId !== undefined) updateData.assignedGroupId = assignedGroupId ? parseInt(assignedGroupId) : null;
+
+  // 複数グループIDの解決
+  if (assignedGroupIds !== undefined) {
+    updateData.assignedGroupIds = Array.isArray(assignedGroupIds)
+      ? assignedGroupIds.map(id => parseInt(id)).filter(Boolean)
+      : [];
+  } else if (assignedGroupId !== undefined) {
+    updateData.assignedGroupId = assignedGroupId ? parseInt(assignedGroupId) : null;
+  }
 
   // 複数ユーザーIDの解決
   if (assignedUserIds !== undefined) {

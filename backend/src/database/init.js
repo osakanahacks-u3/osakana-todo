@@ -96,6 +96,34 @@ function initDatabase() {
     )
   `);
 
+  // タスク担当グループテーブル（複数グループ割り当て対応）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS task_assigned_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      group_id INTEGER NOT NULL,
+      assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+      UNIQUE(task_id, group_id)
+    )
+  `);
+
+  // 既存の assigned_group_id データを task_assigned_groups に移行
+  try {
+    const tasksWithGroup = db.prepare(
+      "SELECT id, assigned_group_id FROM tasks WHERE assigned_group_id IS NOT NULL"
+    ).all();
+    const insertGroup = db.prepare(
+      'INSERT OR IGNORE INTO task_assigned_groups (task_id, group_id) VALUES (?, ?)'
+    );
+    for (const t of tasksWithGroup) {
+      insertGroup.run(t.id, t.assigned_group_id);
+    }
+  } catch (e) {
+    // 移行済みまたはエラー時は無視
+  }
+
   // 既存の assigned_user_id データを task_assignees に移行
   try {
     const tasksWithUser = db.prepare(
@@ -154,6 +182,8 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_tasks_assigned_group ON tasks(assigned_group_id);
     CREATE INDEX IF NOT EXISTS idx_task_assignees_task ON task_assignees(task_id);
     CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees(user_id);
+    CREATE INDEX IF NOT EXISTS idx_task_assigned_groups_task ON task_assigned_groups(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_assigned_groups_group ON task_assigned_groups(group_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by);
     CREATE INDEX IF NOT EXISTS idx_group_members_group ON group_members(group_id);
     CREATE INDEX IF NOT EXISTS idx_group_members_user ON group_members(user_id);
