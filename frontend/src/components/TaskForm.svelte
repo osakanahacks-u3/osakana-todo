@@ -14,9 +14,9 @@
   let description = $state('');
   let priority = $state('medium');
   let dueDate = $state('');
-  let assignType = $state<'none' | 'user' | 'group' | 'all'>('none');
+  let assignType = $state<'none' | 'mixed' | 'all'>('none');
   let assignedUserIds = $state<string[]>([]);
-  let assignedGroupId = $state<string | null>(null);
+  let assignedGroupIds = $state<string[]>([]);
   let loading = $state(false);
   let error = $state('');
 
@@ -25,6 +25,14 @@
       assignedUserIds = assignedUserIds.filter(uid => uid !== id);
     } else {
       assignedUserIds = [...assignedUserIds, id];
+    }
+  }
+
+  function toggleGroupId(id: string) {
+    if (assignedGroupIds.includes(id)) {
+      assignedGroupIds = assignedGroupIds.filter(gid => gid !== id);
+    } else {
+      assignedGroupIds = [...assignedGroupIds, id];
     }
   }
 
@@ -38,14 +46,24 @@
     error = '';
 
     try {
+      // assignedTypeを決定
+      let resolvedType: string | undefined = undefined;
+      if (assignType === 'all') {
+        resolvedType = 'all';
+      } else if (assignType === 'mixed') {
+        if (assignedUserIds.length > 0 && assignedGroupIds.length === 0) resolvedType = 'user';
+        else if (assignedGroupIds.length > 0 && assignedUserIds.length === 0) resolvedType = 'group';
+        else if (assignedUserIds.length > 0 || assignedGroupIds.length > 0) resolvedType = 'user';
+      }
+
       await tasks.create({
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
         dueDate: dueDate || undefined,
-        assignedType: assignType === 'none' ? undefined : assignType,
-        assignedUserIds: assignType === 'user' ? assignedUserIds : undefined,
-        assignedGroupId: assignType === 'group' ? assignedGroupId ?? undefined : undefined
+        assignedType: resolvedType,
+        assignedUserIds: assignType === 'mixed' ? assignedUserIds : undefined,
+        assignedGroupIds: assignType === 'mixed' ? assignedGroupIds : undefined,
       });
       onCreated();
     } catch (e: any) {
@@ -137,20 +155,16 @@
             👥 全員
           </label>
           <label class="radio-label">
-            <input type="radio" bind:group={assignType} value="user" disabled={loading} />
-            👤 ユーザー
-          </label>
-          <label class="radio-label">
-            <input type="radio" bind:group={assignType} value="group" disabled={loading} />
-            📁 グループ
+            <input type="radio" bind:group={assignType} value="mixed" disabled={loading} />
+            👤 ユーザー / 📁 グループ
           </label>
         </div>
       </div>
 
-      {#if assignType === 'user'}
+      {#if assignType === 'mixed'}
         <div class="form-group">
           <!-- svelte-ignore a11y_label_has_associated_control -->
-          <label>担当ユーザー（複数選択可）</label>
+          <label>👤 担当ユーザー（複数選択可）</label>
           <div class="user-checkboxes">
             {#each allUsers as user}
               <label class="checkbox-label">
@@ -165,18 +179,25 @@
             {/each}
           </div>
         </div>
-      {/if}
-
-      {#if assignType === 'group'}
-        <div class="form-group">
-          <label for="assignGroup">担当グループ</label>
-          <select id="assignGroup" bind:value={assignedGroupId} disabled={loading}>
-            <option value={null}>選択してください</option>
-            {#each allGroups as group}
-              <option value={group.id}>{group.name}</option>
-            {/each}
-          </select>
-        </div>
+        {#if allGroups.length > 0}
+          <div class="form-group">
+            <!-- svelte-ignore a11y_label_has_associated_control -->
+            <label>📁 担当グループ（複数選択可）</label>
+            <div class="user-checkboxes">
+              {#each allGroups as group}
+                <label class="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={assignedGroupIds.includes(String(group.id))}
+                    onchange={() => toggleGroupId(String(group.id))}
+                    disabled={loading}
+                  />
+                  {group.name}
+                </label>
+              {/each}
+            </div>
+          </div>
+        {/if}
       {/if}
 
       <div class="form-actions">

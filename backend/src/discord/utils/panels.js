@@ -1,5 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
-const TaskModel = require('../../database/models').TaskModel;
+const { TaskModel, UserModel, GroupModel } = require('../../database/models');
 
 /**
  * 担当者表示文字列を生成（複数ユーザー対応）
@@ -7,9 +7,14 @@ const TaskModel = require('../../database/models').TaskModel;
 function getAssigneeDisplay(task) {
   if (!task) return '未割当';
   if (task.assigned_type === 'all') return '👥 全員';
+  const parts = [];
   if (task.assigned_users && task.assigned_users.length > 0) {
-    return task.assigned_users.map(u => `👤 ${u.username}`).join(', ');
+    parts.push(...task.assigned_users.map(u => `👤 ${u.username}`));
   }
+  if (task.assigned_groups && task.assigned_groups.length > 0) {
+    parts.push(...task.assigned_groups.map(g => `📁 ${g.name}`));
+  }
+  if (parts.length > 0) return parts.join(', ');
   if (task.assigned_user_name) return `👤 ${task.assigned_user_name}`;
   if (task.assigned_group_name) return `📁 ${task.assigned_group_name}`;
   return '未割当';
@@ -66,7 +71,11 @@ async function createMainPanel() {
           { label: '進行中のタスク', value: 'filter_in_progress', emoji: '🔄' },
           { label: '保留中のタスク', value: 'filter_on_hold', emoji: '⏸️' },
           { label: '完了したタスク', value: 'filter_completed', emoji: '✅' },
-          { label: '優先度: 高', value: 'filter_high', emoji: '🔴' },
+          { label: 'その他のタスク', value: 'filter_other', emoji: '📌' },
+          { label: '優先度: 緊急', value: 'filter_urgent', emoji: '🔴' },
+          { label: '優先度: 高', value: 'filter_high', emoji: '🟠' },
+          { label: '優先度: 中', value: 'filter_medium', emoji: '🟡' },
+          { label: '優先度: 低', value: 'filter_low', emoji: '🟢' },
           { label: '期限切れ', value: 'filter_overdue', emoji: '⚠️' },
         ]),
     );
@@ -96,7 +105,8 @@ function createTaskListPanel(tasks, title = 'タスク一覧', page = 1, totalPa
   };
 
   const priorityEmojis = {
-    high: '🔴',
+    urgent: '🔴',
+    high: '🟠',
     medium: '🟡',
     low: '🟢',
   };
@@ -166,7 +176,8 @@ function createTaskDetailPanel(task) {
   };
 
   const priorityLabels = {
-    high: '🔴 高',
+    urgent: '🔴 緊急',
+    high: '🟠 高',
     medium: '🟡 中',
     low: '🟢 低',
   };
@@ -209,6 +220,29 @@ function createTaskDetailPanel(task) {
 
   const row2 = new ActionRowBuilder()
     .addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`task_priority_change:${task.id}`)
+        .setPlaceholder('⚡ 優先度変更')
+        .addOptions([
+          { label: '緊急', value: 'urgent', emoji: '🔴' },
+          { label: '高', value: 'high', emoji: '🟠' },
+          { label: '中', value: 'medium', emoji: '🟡' },
+          { label: '低', value: 'low', emoji: '🟢' },
+        ]),
+    );
+
+  const row3 = new ActionRowBuilder()
+    .addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`task_assign_change:${task.id}`)
+        .setPlaceholder('👤 担当者変更（複数選択可）')
+        .setMinValues(1)
+        .setMaxValues(Math.max(1, buildAssigneeOptions(task).length))
+        .addOptions(buildAssigneeOptions(task)),
+    );
+
+  const row4 = new ActionRowBuilder()
+    .addComponents(
       new ButtonBuilder()
         .setCustomId(`task_edit:${task.id}`)
         .setLabel('編集')
@@ -231,7 +265,7 @@ function createTaskDetailPanel(task) {
         .setEmoji('🏠'),
     );
 
-  return { embeds: [embed], components: [row1, row2] };
+  return { embeds: [embed], components: [row1, row2, row3, row4] };
 }
 
 /**
@@ -275,6 +309,56 @@ function createStatsPanel(stats) {
     );
 
   return { embeds: [embed], components: [row] };
+}
+
+/**
+ * 担当者変更用のセレクトメニューオプションを構築
+ */
+function buildAssigneeOptions(task) {
+  const options = [];
+
+  // 「未割当」オプション
+  options.push({
+    label: '未割当にする',
+    value: 'assign_none',
+    emoji: '❌',
+    description: '担当者を解除',
+  });
+
+  // 「全員」オプション
+  options.push({
+    label: '全員に割り当て',
+    value: 'assign_all',
+    emoji: '👥',
+    description: '全メンバーに割り当て',
+  });
+
+  // グループ一覧
+  const groups = GroupModel.getAll();
+  for (const group of groups.slice(0, 10)) {
+    const isAssigned = task.assigned_groups?.some(g => g.id === group.id);
+    options.push({
+      label: `${group.name}`,
+      value: `assign_group:${group.id}`,
+      emoji: isAssigned ? '✅' : '📁',
+      description: isAssigned ? '現在担当グループ' : 'このグループに割り当て',
+    });
+  }
+
+  // ユーザー一覧
+  const users = UserModel.getAll();
+  const maxUsers = 25 - options.length;
+  for (const user of users.slice(0, maxUsers)) {
+    const isAssigned = task.assigned_users?.some(u => u.id === user.id);
+    options.push({
+      label: `${user.username}`,
+      value: `assign_user:${user.id}`,
+      emoji: isAssigned ? '✅' : '👤',
+      description: isAssigned ? '現在の担当者' : 'この人に割り当て',
+    });
+  }
+
+  return options;
 }
 
 module.exports = {

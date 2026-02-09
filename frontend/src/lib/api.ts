@@ -137,6 +137,7 @@ export const tasks = {
     dueDate?: string;
     assignedType?: string;
     assignedUserIds?: string[];
+    assignedGroupIds?: string[];
     assignedUserId?: string;
     assignedGroupId?: string;
   }) {

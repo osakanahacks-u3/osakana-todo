@@ -119,6 +119,19 @@ const TaskModel = {
       task.assigned_user_name = assignees.map(u => u.username).join(', ');
       task.assigned_user_discord_id = assignees.map(u => u.discord_id).join(',');
     }
+    // 複数グループ情報を付与
+    const groups = db.prepare(`
+      SELECT g.id, g.name, g.discord_role_id
+      FROM task_assigned_groups tag
+      JOIN groups g ON tag.group_id = g.id
+      WHERE tag.task_id = ?
+      ORDER BY g.name
+    `).all(task.id);
+    task.assigned_groups = groups;
+    // 後方互換: assigned_group_name
+    if (groups.length > 0) {
+      task.assigned_group_name = groups.map(g => g.name).join(', ');
+    }
     return task;
   },
 
@@ -143,12 +156,32 @@ const TaskModel = {
       assigneeMap[a.task_id].push({ id: a.id, username: a.username, discord_id: a.discord_id });
     }
 
+    // 複数グループ情報
+    const allGroups = db.prepare(`
+      SELECT tag.task_id, g.id, g.name, g.discord_role_id
+      FROM task_assigned_groups tag
+      JOIN groups g ON tag.group_id = g.id
+      WHERE tag.task_id IN (${placeholders})
+      ORDER BY g.name
+    `).all(...taskIds);
+
+    const groupMap = {};
+    for (const g of allGroups) {
+      if (!groupMap[g.task_id]) groupMap[g.task_id] = [];
+      groupMap[g.task_id].push({ id: g.id, name: g.name, discord_role_id: g.discord_role_id });
+    }
+
     for (const task of tasks) {
       const assignees = assigneeMap[task.id] || [];
       task.assigned_users = assignees;
       if (assignees.length > 0) {
         task.assigned_user_name = assignees.map(u => u.username).join(', ');
         task.assigned_user_discord_id = assignees.map(u => u.discord_id).join(',');
+      }
+      const groups = groupMap[task.id] || [];
+      task.assigned_groups = groups;
+      if (groups.length > 0) {
+        task.assigned_group_name = groups.map(g => g.name).join(', ');
       }
     }
     return tasks;
@@ -291,12 +324,22 @@ const TaskModel = {
     const taskId = result.lastInsertRowid;
 
     // task_assignees に複数ユーザーを登録
-    if (data.assignedType === 'user') {
+    if (data.assignedType === 'user' || (Array.isArray(data.assignedUserIds) && data.assignedUserIds.length > 0)) {
       const userIds = Array.isArray(data.assignedUserIds) ? data.assignedUserIds : (data.assignedUserId ? [data.assignedUserId] : []);
       const insertAssignee = db.prepare('INSERT OR IGNORE INTO task_assignees (task_id, user_id) VALUES (?, ?)');
       for (const uid of userIds) {
         if (uid) insertAssignee.run(taskId, uid);
       }
+    }
+
+    // task_assigned_groups に複数グループを登録
+    if (Array.isArray(data.assignedGroupIds) && data.assignedGroupIds.length > 0) {
+      const insertGroup = db.prepare('INSERT OR IGNORE INTO task_assigned_groups (task_id, group_id) VALUES (?, ?)');
+      for (const gid of data.assignedGroupIds) {
+        if (gid) insertGroup.run(taskId, gid);
+      }
+    } else if (data.assignedGroupId) {
+      db.prepare('INSERT OR IGNORE INTO task_assigned_groups (task_id, group_id) VALUES (?, ?)').run(taskId, data.assignedGroupId);
     }
 
     return this.findById(taskId);
@@ -316,6 +359,23 @@ const TaskModel = {
       db.prepare('UPDATE tasks SET assigned_user_id = ? WHERE id = ?').run(userIds[0], taskId);
     } else {
       db.prepare('UPDATE tasks SET assigned_user_id = NULL WHERE id = ?').run(taskId);
+    }
+  },
+
+  /**
+   * タスクの担当グループを設定（全置換）
+   */
+  setAssignedGroups(taskId, groupIds) {
+    db.prepare('DELETE FROM task_assigned_groups WHERE task_id = ?').run(taskId);
+    if (groupIds && groupIds.length > 0) {
+      const insert = db.prepare('INSERT OR IGNORE INTO task_assigned_groups (task_id, group_id) VALUES (?, ?)');
+      for (const gid of groupIds) {
+        if (gid) insert.run(taskId, gid);
+      }
+      // 後方互換: assigned_group_id に最初の1つをセット
+      db.prepare('UPDATE tasks SET assigned_group_id = ? WHERE id = ?').run(groupIds[0], taskId);
+    } else {
+      db.prepare('UPDATE tasks SET assigned_group_id = NULL WHERE id = ?').run(taskId);
     }
   },
 
@@ -345,6 +405,24 @@ const TaskModel = {
       // 後方互換: 単一ユーザー指定
       const uid = data.assignedUserId;
       this.setAssignees(id, uid ? [uid] : []);
+    }
+
+    // 複数グループ担当の更新
+    if (data.assignedGroupIds !== undefined) {
+      const groupIds = Array.isArray(data.assignedGroupIds) ? data.assignedGroupIds.filter(Boolean) : [];
+      this.setAssignedGroups(id, groupIds);
+      // 後方互換用: assigned_group_id
+      if (groupIds.length > 0) {
+        fields.push('assigned_group_id = ?');
+        params.push(groupIds[0]);
+      } else {
+        fields.push('assigned_group_id = ?');
+        params.push(null);
+      }
+    } else if (data.assignedGroupId !== undefined && data.assignedGroupIds === undefined) {
+      // 単一グループ指定（後方互換）
+      const gid = data.assignedGroupId;
+      this.setAssignedGroups(id, gid ? [gid] : []);
     }
 
     fields.push('updated_at = CURRENT_TIMESTAMP');
