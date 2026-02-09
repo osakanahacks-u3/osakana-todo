@@ -2,7 +2,7 @@
   import { tasks } from '../lib/api';
 
   interface Props {
-    filter: { status?: string; assignedUserId?: string; priority?: string; assignedType?: string; sort?: string };
+    filter: { status?: string; assignedUserId?: string; priority?: string; assignedType?: string; sort?: string; sortOrder?: string };
     version: number;
     onSelect: (id: string) => void;
     onRefresh: () => void;
@@ -63,6 +63,7 @@
         if (filter.status) apiFilters.status = filter.status;
         // @ts-ignore
         if (filter.sort) apiFilters.sort = filter.sort;
+        if (filter.sortOrder) apiFilters.sortOrder = filter.sortOrder;
         result = await tasks.getMy(apiFilters);
       } else {
         result = await tasks.getAll(filter);

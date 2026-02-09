@@ -19,6 +19,8 @@ router.get('/', (req, res) => {
   if (assignedType) filters.assignedType = assignedType;
   if (priority && ['low','medium','high','urgent'].includes(priority)) filters.priority = priority;
   if (sort && ['id','priority'].includes(sort)) filters.sort = sort;
+  const sortOrder = req.query.sortOrder;
+  if (sortOrder && ['asc','desc'].includes(sortOrder)) filters.sortOrder = sortOrder;
   if (limit) filters.limit = parseInt(limit);
 
   const tasks = TaskModel.getAll(filters);
@@ -38,6 +40,8 @@ router.get('/my', (req, res) => {
   if (assignedType && ['user','group','all'].includes(assignedType)) filters.assignedType = assignedType;
   if (status && ['pending','in_progress','on_hold','completed','other'].includes(status)) filters.status = status;
   if (sort && ['id','priority'].includes(sort)) filters.sort = sort;
+  const sortOrder = req.query.sortOrder;
+  if (sortOrder && ['asc','desc'].includes(sortOrder)) filters.sortOrder = sortOrder;
 
   const tasks = TaskModel.getForUser(req.user.id, filters);
   res.json(tasks);

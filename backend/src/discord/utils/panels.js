@@ -155,9 +155,12 @@ function createTaskListPanel(tasks, title = 'タスク一覧', page = 1, totalPa
         .setCustomId(sortCustomId.slice(0, 100))
         .setPlaceholder('🔀 並び替え')
         .addOptions([
-          { label: 'ID順', value: 'sort_id', emoji: '🔢', description: 'タスクIDの昇順' },
-          { label: '優先度順', value: 'sort_priority', emoji: '🎯', description: '緊急 → 高 → 中 → 低' },
-          { label: '作成日順', value: 'sort_created', emoji: '📅', description: '新しい順（デフォルト）' },
+          { label: 'ID順（昇順）', value: 'sort_id_asc', emoji: '🔢', description: 'タスクID: 小さい順' },
+          { label: 'ID順（降順）', value: 'sort_id_desc', emoji: '🔢', description: 'タスクID: 大きい順' },
+          { label: '優先度順（高→低）', value: 'sort_priority_desc', emoji: '🎯', description: '緊急 → 高 → 中 → 低' },
+          { label: '優先度順（低→高）', value: 'sort_priority_asc', emoji: '🎯', description: '低 → 中 → 高 → 緊急' },
+          { label: '作成日順（新しい順）', value: 'sort_created_desc', emoji: '📅', description: '新しいタスクが上' },
+          { label: '作成日順（古い順）', value: 'sort_created_asc', emoji: '📅', description: '古いタスクが上' },
         ]),
     );
   components.push(sortRow);

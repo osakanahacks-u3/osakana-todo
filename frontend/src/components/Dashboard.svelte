@@ -10,7 +10,7 @@
   let currentUser = $state<any>(null);
   let loading = $state(true);
   let activeView = $state<'tasks' | 'groups'>('tasks');
-  let taskFilter = $state<{ status?: string; assignedUserId?: string; priority?: string; assignedType?: string; sort?: string }>({});
+  let taskFilter = $state<{ status?: string; assignedUserId?: string; priority?: string; assignedType?: string; sort?: string; sortOrder?: string }>({});
   let showTaskForm = $state(false);
   let selectedTaskId = $state<string | null>(null);
   let stats = $state<any>(null);
@@ -174,11 +174,15 @@
   function setSort(sort: string) {
     if (taskFilter.sort === sort) {
       // 同じソートを再度押したら解除
-      const { sort: _, ...rest } = taskFilter;
+      const { sort: _, sortOrder: __, ...rest } = taskFilter;
       taskFilter = rest;
     } else {
-      taskFilter = { ...taskFilter, sort };
+      taskFilter = { ...taskFilter, sort, sortOrder: taskFilter.sortOrder || 'desc' };
     }
+  }
+
+  function setSortOrder(order: string) {
+    taskFilter = { ...taskFilter, sortOrder: order };
   }
 
   function setStatus(status: string) {
@@ -330,6 +334,14 @@
                 title="優先度順"
               >
                 🔥 優先度順
+              </button>
+              <button 
+                class="sort-order-btn" 
+                class:active={taskFilter.sortOrder === 'asc'}
+                onclick={() => setSortOrder(taskFilter.sortOrder === 'asc' ? 'desc' : 'asc')}
+                title={taskFilter.sortOrder === 'asc' ? '昇順（クリックで降順に）' : '降順（クリックで昇順に）'}
+              >
+                {taskFilter.sortOrder === 'asc' ? '⬆️ 昇順' : '⬇️ 降順'}
               </button>
             </div>
 
@@ -695,6 +707,28 @@
     color: var(--text-primary);
   }
 
+  .sort-order-btn {
+    padding: 7px 14px;
+    background: transparent;
+    border: none;
+    border-left: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+  .sort-order-btn:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+  }
+  .sort-order-btn.active {
+    background: var(--primary-light, rgba(88, 101, 242, 0.15));
+    color: var(--primary);
+  }
+
   .filter-right {
     display: flex;
     align-items: center;
@@ -885,6 +919,7 @@
     .filter-toolbar { padding: 10px 16px; }
     .filter-row-main { gap: 8px; }
     .sort-btn { padding: 6px 10px; font-size: 12px; }
+    .sort-order-btn { padding: 6px 10px; font-size: 12px; }
     .my-tasks-btn { font-size: 12px; }
     .filter-toggle-btn span { display: none; }
     .filter-toggle-btn svg { display: block; }
@@ -909,6 +944,7 @@
   @media (max-width: 480px) {
     .main-header h1 { font-size: 1rem; }
     .sort-btn { padding: 5px 8px; font-size: 11px; }
+    .sort-order-btn { padding: 5px 8px; font-size: 11px; }
   }
 
   /* Hidden file input */
