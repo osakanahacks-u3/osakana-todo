@@ -172,16 +172,10 @@
   }
 
   function setSort(sort: string) {
-    if (taskFilter.sort === sort) {
-      // 同じソートを再度押したら解除
-      const { sort: _, sortOrder: __, ...rest } = taskFilter;
-      taskFilter = rest;
-    } else {
-      taskFilter = { ...taskFilter, sort, sortOrder: taskFilter.sortOrder || 'desc' };
-    }
+    taskFilter = { ...taskFilter, sort };
   }
 
-  function setSortOrder(order: string) {
+  function setSortOrder(order: 'asc' | 'desc') {
     taskFilter = { ...taskFilter, sortOrder: order };
   }
 
@@ -317,32 +311,44 @@
         <!-- Filter Toolbar -->
         <div class="filter-toolbar">
           <div class="filter-row-main">
-            <!-- Sort Toggle -->
-            <div class="sort-group">
-              <button 
-                class="sort-btn" 
-                class:active={!taskFilter.sort || taskFilter.sort === 'id'} 
-                onclick={() => setSort('id')}
-                title="ID順"
-              >
-                🔢 ID順
-              </button>
-              <button 
-                class="sort-btn" 
-                class:active={taskFilter.sort === 'priority'} 
-                onclick={() => setSort('priority')}
-                title="優先度順"
-              >
-                🔥 優先度順
-              </button>
-              <button 
-                class="sort-order-btn" 
-                class:active={taskFilter.sortOrder === 'asc'}
-                onclick={() => setSortOrder(taskFilter.sortOrder === 'asc' ? 'desc' : 'asc')}
-                title={taskFilter.sortOrder === 'asc' ? '昇順（クリックで降順に）' : '降順（クリックで昇順に）'}
-              >
-                {taskFilter.sortOrder === 'asc' ? '⬆️ 昇順' : '⬇️ 降順'}
-              </button>
+            <!-- Sort Controls -->
+            <div class="sort-controls">
+              <div class="sort-type-group">
+                <button 
+                  class="sort-btn" 
+                  class:active={!taskFilter.sort || taskFilter.sort === 'id'} 
+                  onclick={() => setSort('id')}
+                  title="ID・作成日順"
+                >
+                  🔢 ID・作成日順
+                </button>
+                <button 
+                  class="sort-btn" 
+                  class:active={taskFilter.sort === 'priority'} 
+                  onclick={() => setSort('priority')}
+                  title="優先度順"
+                >
+                  🔥 優先度順
+                </button>
+              </div>
+              <div class="sort-order-group">
+                <button 
+                  class="sort-order-btn" 
+                  class:active={!taskFilter.sortOrder || taskFilter.sortOrder === 'desc'}
+                  onclick={() => setSortOrder('desc')}
+                  title={taskFilter.sort === 'priority' ? '高→低' : '新しい順'}
+                >
+                  ⬇️ {taskFilter.sort === 'priority' ? '高→低' : '降順'}
+                </button>
+                <button 
+                  class="sort-order-btn" 
+                  class:active={taskFilter.sortOrder === 'asc'}
+                  onclick={() => setSortOrder('asc')}
+                  title={taskFilter.sort === 'priority' ? '低→高' : '古い順'}
+                >
+                  ⬆️ {taskFilter.sort === 'priority' ? '低→高' : '昇順'}
+                </button>
+              </div>
             </div>
 
             <div class="filter-right">
@@ -677,13 +683,24 @@
     flex-wrap: wrap;
   }
 
-  .sort-group {
+  .sort-controls {
     display: flex;
-    background: var(--bg-tertiary);
-    border-radius: var(--radius-md);
-    overflow: hidden;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .sort-type-group {
+    display: flex;
     border: 1px solid var(--border-color);
-    flex-shrink: 0;
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .sort-order-group {
+    display: flex;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    overflow: hidden;
   }
 
   .sort-btn {
@@ -708,25 +725,24 @@
   }
 
   .sort-order-btn {
-    padding: 7px 14px;
+    padding: 7px 10px;
     background: transparent;
     border: none;
-    border-left: 1px solid var(--border-color);
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     cursor: pointer;
     transition: var(--transition);
     white-space: nowrap;
-    border-radius: 0 var(--radius) var(--radius) 0;
   }
+  .sort-order-btn:not(:last-child) { border-right: 1px solid var(--border-color); }
   .sort-order-btn:hover {
     background: var(--bg-primary);
     color: var(--text-primary);
   }
   .sort-order-btn.active {
-    background: var(--primary-light, rgba(88, 101, 242, 0.15));
-    color: var(--primary);
+    background: var(--primary);
+    color: white;
   }
 
   .filter-right {
@@ -918,8 +934,9 @@
 
     .filter-toolbar { padding: 10px 16px; }
     .filter-row-main { gap: 8px; }
+    .sort-controls { flex-wrap: wrap; }
     .sort-btn { padding: 6px 10px; font-size: 12px; }
-    .sort-order-btn { padding: 6px 10px; font-size: 12px; }
+    .sort-order-btn { padding: 6px 8px; font-size: 11px; }
     .my-tasks-btn { font-size: 12px; }
     .filter-toggle-btn span { display: none; }
     .filter-toggle-btn svg { display: block; }
@@ -943,8 +960,8 @@
 
   @media (max-width: 480px) {
     .main-header h1 { font-size: 1rem; }
-    .sort-btn { padding: 5px 8px; font-size: 11px; }
-    .sort-order-btn { padding: 5px 8px; font-size: 11px; }
+    .sort-btn { padding: 5px 6px; font-size: 11px; }
+    .sort-order-btn { padding: 5px 6px; font-size: 10px; }
   }
 
   /* Hidden file input */

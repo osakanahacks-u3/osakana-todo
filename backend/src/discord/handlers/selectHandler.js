@@ -131,13 +131,11 @@ module.exports = async function(interaction) {
   if (customId === 'panel_sort' || customId.startsWith('panel_sort:')) {
     let sort = undefined;
     let sortOrder = undefined;
-    let sortLabel = '作成日順（新しい順）';
-    if (value === 'sort_id_asc') { sort = 'id'; sortOrder = 'asc'; sortLabel = 'ID順（昇順）'; }
-    else if (value === 'sort_id_desc') { sort = 'id'; sortOrder = 'desc'; sortLabel = 'ID順（降順）'; }
+    let sortLabel = 'ID・作成日順（降順）';
+    if (value === 'sort_id_asc') { sort = 'id'; sortOrder = 'asc'; sortLabel = 'ID・作成日順（昇順）'; }
+    else if (value === 'sort_id_desc') { sort = 'id'; sortOrder = 'desc'; sortLabel = 'ID・作成日順（降順）'; }
     else if (value === 'sort_priority_desc') { sort = 'priority'; sortOrder = 'desc'; sortLabel = '優先度順（高→低）'; }
     else if (value === 'sort_priority_asc') { sort = 'priority'; sortOrder = 'asc'; sortLabel = '優先度順（低→高）'; }
-    else if (value === 'sort_created_desc') { sort = undefined; sortOrder = 'desc'; sortLabel = '作成日順（新しい順）'; }
-    else if (value === 'sort_created_asc') { sort = undefined; sortOrder = 'asc'; sortLabel = '作成日順（古い順）'; }
 
     // フィルター条件をcustomIdからパース
     let filterContext = null;
