@@ -102,7 +102,7 @@ if (fs.existsSync(staticDir)) {
     }
   });
 } else {
-      next();
+  // staticDir が存在しない場合は何もしない（next は未定義なので呼ばない）
 }
 
 // エラーハンドリング

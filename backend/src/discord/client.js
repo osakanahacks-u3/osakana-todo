@@ -369,7 +369,6 @@ client.once('clientReady', async () => {
 client.on('interactionCreate', async (interaction) => {
   try {
     // ロール権限チェック
-    const { checkMemberPermission } = require('./middleware/permission') || require('../middleware/permission');
     const permCheck = (() => {
       try {
         const mod = require('../middleware/permission');
