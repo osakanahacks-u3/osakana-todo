@@ -10,7 +10,7 @@ router.use(authMiddleware);
 
 // タスク一覧取得
 router.get('/', (req, res) => {
-  const { status, assignedUserId, assignedGroupId, assignedType, priority, limit } = req.query;
+  const { status, assignedUserId, assignedGroupId, assignedType, priority, limit, sort } = req.query;
   
   const filters = {};
   if (status) filters.status = status;
@@ -18,6 +18,7 @@ router.get('/', (req, res) => {
   if (assignedGroupId) filters.assignedGroupId = parseInt(assignedGroupId);
   if (assignedType) filters.assignedType = assignedType;
   if (priority && ['low','medium','high','urgent'].includes(priority)) filters.priority = priority;
+  if (sort && ['id','priority'].includes(sort)) filters.sort = sort;
   if (limit) filters.limit = parseInt(limit);
 
   const tasks = TaskModel.getAll(filters);
@@ -32,10 +33,11 @@ router.get('/my', (req, res) => {
   }
 
   const filters = {};
-  const { priority, assignedType, status } = req.query;
+  const { priority, assignedType, status, sort } = req.query;
   if (priority && ['low','medium','high','urgent'].includes(priority)) filters.priority = priority;
   if (assignedType && ['user','group','all'].includes(assignedType)) filters.assignedType = assignedType;
   if (status && ['pending','in_progress','on_hold','completed','other'].includes(status)) filters.status = status;
+  if (sort && ['id','priority'].includes(sort)) filters.sort = sort;
 
   const tasks = TaskModel.getForUser(req.user.id, filters);
   res.json(tasks);

@@ -2,7 +2,7 @@
   import { tasks } from '../lib/api';
 
   interface Props {
-    filter: { status?: string; assignedUserId?: string };
+    filter: { status?: string; assignedUserId?: string; priority?: string; assignedType?: string; sort?: string };
     version: number;
     onSelect: (id: string) => void;
     onRefresh: () => void;
@@ -61,6 +61,8 @@
         if (filter.assignedType) apiFilters.assignedType = filter.assignedType;
         // @ts-ignore
         if (filter.status) apiFilters.status = filter.status;
+        // @ts-ignore
+        if (filter.sort) apiFilters.sort = filter.sort;
         result = await tasks.getMy(apiFilters);
       } else {
         result = await tasks.getAll(filter);
@@ -146,13 +148,21 @@
   </div>
 {:else}
   <div class="task-list">
+    <div class="task-list-header">
+      <span class="result-count">{taskList.length}件</span>
+    </div>
     {#each taskList as task (task.id)}
       <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-      <div class="task-card" onclick={() => onSelect(task.id)} tabindex="0" role="button" onkeydown={(e) => e.key === 'Enter' && onSelect(task.id)}>
+      <div class="task-card" class:completed={task.status === 'completed'} onclick={() => onSelect(task.id)} tabindex="0" role="button" onkeydown={(e) => e.key === 'Enter' && onSelect(task.id)}>
         <div class="task-header">
-          <span class="task-priority" title="優先度">
-            {PRIORITY_LABELS[task.priority] || task.priority}
-          </span>
+          <div class="task-header-left">
+            <span class="task-id">#{task.id}</span>
+            {#if task.priority}
+              <span class="task-priority" title="優先度">
+                {PRIORITY_LABELS[task.priority] || task.priority}
+              </span>
+            {/if}
+          </div>
           <div class="status-badge" style="background-color: {STATUS_COLORS[task.status]}20; color: {STATUS_COLORS[task.status]}; border-color: {STATUS_COLORS[task.status]}">
             {STATUS_LABELS[task.status]?.split(' ')[0] || '📌'}
           </div>
@@ -167,7 +177,7 @@
         <div class="task-meta">
           <span class="task-assignee">{getAssignee(task)}</span>
           {#if task.due_date}
-            <span class="task-due">📅 {formatDate(task.due_date)}</span>
+            <span class="task-due" class:overdue={new Date(task.due_date) < new Date()}>📅 {formatDate(task.due_date)}</span>
           {/if}
         </div>
 
@@ -258,8 +268,22 @@
 
   .task-list {
     display: grid;
-    gap: 16px;
+    gap: 14px;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  }
+
+  .task-list-header {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-bottom: 4px;
+  }
+
+  .result-count {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
   }
 
   .task-card {
@@ -272,8 +296,12 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    min-height: 160px;
+    min-height: 150px;
     -webkit-tap-highlight-color: rgba(88, 101, 242, 0.2);
+  }
+
+  .task-card.completed {
+    opacity: 0.65;
   }
 
   .task-card:hover {
@@ -298,8 +326,21 @@
     align-items: center;
   }
 
+  .task-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .task-id {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
   .task-priority {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
   }
 
@@ -322,6 +363,11 @@
     gap: 12px;
     font-size: 12px;
     color: var(--text-muted);
+  }
+
+  .task-due.overdue {
+    color: var(--danger);
+    font-weight: 600;
   }
 
   .task-footer {

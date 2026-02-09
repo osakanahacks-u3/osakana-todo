@@ -1,6 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, MessageFlags, AttachmentBuilder, PermissionFlagsBits } = require('discord.js');
 const { TaskModel, UserModel, GroupModel } = require('../../database/models');
 const { createMainPanel, createStatsPanel } = require('../utils/panels');
+const { db } = require('../../database/init');
 
 const STATUS_LABELS = {
   pending: '⏳ 未処理',
@@ -179,6 +180,29 @@ module.exports = {
               { name: '📋 その他', value: 'other' }
             )
         )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('export')
+        .setDescription('タスクデータをファイルとしてエクスポートします')
+        .addStringOption(option =>
+          option.setName('type')
+            .setDescription('出力形式')
+            .setRequired(true)
+            .addChoices(
+              { name: 'TXT', value: 'txt' },
+              { name: 'CSV', value: 'csv' },
+              { name: 'JSON', value: 'json' }
+            )
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('import')
+        .setDescription('JSONファイルからタスクデータをインポートします（管理者のみ）')
+        .addAttachmentOption(option =>
+          option.setName('file').setDescription('インポートするJSONファイル').setRequired(true)
+        )
     ),
 
   async execute(interaction) {
@@ -214,6 +238,12 @@ module.exports = {
         break;
       case 'progress':
         await this.changeProgress(interaction);
+        break;
+      case 'export':
+        await this.exportTasks(interaction);
+        break;
+      case 'import':
+        await this.importTasks(interaction);
         break;
     }
   },
@@ -669,8 +699,187 @@ module.exports = {
       ? Math.round((stats.completed / stats.total) * 100) 
       : 0;
 
-    embed.addFields({ name: '✨ 完了率', value: `${completionRate}%`, inline: false });
+    embed.addFields(
+      { name: '✨ 完了率', value: `${completionRate}%`, inline: false },
+      { name: '\u200b', value: '**🎯 優先度別（未完了）**', inline: false },
+      { name: '🔴 緊急', value: `${stats.urgent || 0}件`, inline: true },
+      { name: '🟠 高', value: `${stats.high || 0}件`, inline: true },
+      { name: '🟡 中', value: `${stats.medium || 0}件`, inline: true },
+      { name: '🟢 低', value: `${stats.low || 0}件`, inline: true },
+      { name: '➖ なし', value: `${stats.no_priority || 0}件`, inline: true },
+    );
 
     await interaction.reply({ embeds: [embed] });
+  },
+
+  async exportTasks(interaction) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const type = interaction.options.getString('type');
+    const tasks = TaskModel.getAll({});
+
+    if (tasks.length === 0) {
+      await interaction.editReply({ content: '📭 エクスポートするタスクがありません' });
+      return;
+    }
+
+    let content = '';
+    let filename = '';
+
+    if (type === 'txt') {
+      content = '\uFEFFTODOタスク一覧\n';
+      content += '='.repeat(50) + '\n\n';
+      tasks.forEach(task => {
+        content += `[#${task.id}] ${task.title}\n`;
+        content += `  ステータス: ${STATUS_LABELS[task.status] || task.status}\n`;
+        content += `  優先度: ${PRIORITY_LABELS[task.priority] || task.priority}\n`;
+        if (task.description) content += `  説明: ${task.description}\n`;
+        const assignee = task.assigned_users?.length > 0 ? task.assigned_users.map(u => u.username).join(', ') : 
+          (task.assigned_type === 'all' ? '全員' : (task.assigned_user_name || task.assigned_group_name || '未割当'));
+        content += `  担当: ${assignee}\n`;
+        content += `  作成者: ${task.creator_name || '不明'}\n`;
+        content += `  作成日: ${task.created_at}\n`;
+        if (task.due_date) content += `  期限: ${task.due_date}\n`;
+        if (task.completed_at) content += `  完了日: ${task.completed_at}\n`;
+        content += '\n';
+      });
+      content += '='.repeat(50) + '\n';
+      content += `総タスク数: ${tasks.length}\n`;
+      content += `エクスポート日時: ${new Date().toLocaleString('ja-JP')}\n`;
+      filename = 'tasks.txt';
+    } else if (type === 'csv') {
+      content = '\uFEFFID,タイトル,説明,ステータス,優先度,担当タイプ,担当者,担当グループ,作成者,作成日,期限,完了日\n';
+      tasks.forEach(task => {
+        const row = [
+          task.id,
+          `"${(task.title || '').replace(/"/g, '""')}"`,
+          `"${(task.description || '').replace(/"/g, '""')}"`,
+          task.status,
+          task.priority,
+          task.assigned_type || '',
+          task.assigned_users?.length > 0 ? task.assigned_users.map(u => u.username).join('; ') : (task.assigned_user_name || ''),
+          task.assigned_group_name || '',
+          task.creator_name || '',
+          task.created_at || '',
+          task.due_date || '',
+          task.completed_at || ''
+        ];
+        content += row.join(',') + '\n';
+      });
+      filename = 'tasks.csv';
+    } else {
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        totalTasks: tasks.length,
+        tasks: tasks.map(task => ({
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          priority: task.priority,
+          assignedType: task.assigned_type,
+          assignedUsers: task.assigned_users?.map(u => ({ username: u.username, discordId: u.discord_id })) || [],
+          assignedGroups: task.assigned_groups?.map(g => ({ name: g.name })) || [],
+          createdBy: task.creator_name,
+          createdAt: task.created_at,
+          updatedAt: task.updated_at,
+          dueDate: task.due_date,
+          completedAt: task.completed_at
+        }))
+      };
+      content = JSON.stringify(exportData, null, 2);
+      filename = 'tasks.json';
+    }
+
+    const buf = Buffer.from(content, 'utf-8');
+    const attachment = new AttachmentBuilder(buf, { name: filename });
+
+    await interaction.editReply({
+      content: `📥 ${tasks.length}件のタスクを${type.toUpperCase()}形式でエクスポートしました`,
+      files: [attachment]
+    });
+  },
+
+  async importTasks(interaction) {
+    // 管理者権限チェック
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      await interaction.reply({
+        content: '❌ インポートはサーバー管理者のみ実行できます',
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+
+    const file = interaction.options.getAttachment('file');
+
+    // JSONファイルチェック
+    if (!file.name.endsWith('.json')) {
+      await interaction.reply({
+        content: '❌ JSONファイルのみインポートできます（`/todo export type:json` で出力したファイル）',
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+
+    // ファイルサイズチェック（5MB制限）
+    if (file.size > 5 * 1024 * 1024) {
+      await interaction.reply({
+        content: '❌ ファイルサイズが大きすぎます（5MB以下にしてください）',
+        flags: MessageFlags.Ephemeral
+      });
+      return;
+    }
+
+    // ファイルをダウンロードして内容を解析
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    try {
+      const response = await fetch(file.url);
+      let text = await response.text();
+      // BOM除去
+      if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      const data = JSON.parse(text);
+
+      if (!data.tasks || !Array.isArray(data.tasks)) {
+        await interaction.editReply({ content: '❌ 無効なファイル形式です。`tasks` 配列が見つかりません' });
+        return;
+      }
+
+      const taskCount = data.tasks.length;
+      const currentStats = TaskModel.getStats();
+
+      // 確認メッセージを表示
+      const embed = new EmbedBuilder()
+        .setTitle('⚠️ インポート確認')
+        .setColor(0xe74c3c)
+        .setDescription(
+          '**この操作は既存のすべてのタスクを削除し、インポートデータで上書きします。**\n' +
+          'この操作は取り消せません。'
+        )
+        .addFields(
+          { name: '🗑️ 削除されるタスク', value: `${currentStats.total}件`, inline: true },
+          { name: '📥 インポートされるタスク', value: `${taskCount}件`, inline: true },
+        )
+        .setFooter({ text: '本当にインポートしますか？' })
+        .setTimestamp();
+
+      const row = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(`import_confirm:${interaction.user.id}:${file.url}`)
+            .setLabel('はい、インポートする')
+            .setStyle(ButtonStyle.Danger)
+            .setEmoji('⚠️'),
+          new ButtonBuilder()
+            .setCustomId('import_cancel')
+            .setLabel('いいえ、キャンセル')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('❌'),
+        );
+
+      await interaction.editReply({ embeds: [embed], components: [row] });
+    } catch (e) {
+      console.error('Import parse error:', e);
+      await interaction.editReply({ content: '❌ ファイルの解析に失敗しました。正しいJSON形式か確認してください' });
+    }
   }
 };

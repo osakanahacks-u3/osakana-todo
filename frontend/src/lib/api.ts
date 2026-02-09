@@ -113,11 +113,12 @@ export const tasks = {
     return fetchApi(`/api/tasks${query ? `?${query}` : ''}`);
   },
 
-  async getMy(filters: { priority?: string; assignedType?: string; status?: string } = {}) {
+  async getMy(filters: { priority?: string; assignedType?: string; status?: string; sort?: string } = {}) {
     const params = new URLSearchParams();
     if (filters.priority) params.append('priority', filters.priority);
     if (filters.assignedType) params.append('assignedType', filters.assignedType);
     if (filters.status) params.append('status', filters.status);
+    if (filters.sort) params.append('sort', filters.sort);
     const query = params.toString();
     return fetchApi(`/api/tasks/my${query ? `?${query}` : ''}`);
   },
@@ -262,5 +263,27 @@ export const exportTasks = {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  },
+
+  async importJson(data: { tasks: any[] }) {
+    const token = getToken();
+    const response = await fetch(`${API_BASE}/api/export/import`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(data)
+    });
+    if (response.status === 401) {
+      removeToken();
+      if (typeof window !== 'undefined') window.location.href = '/login';
+      throw new Error('Unauthorized');
+    }
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(err.error || 'Import failed');
+    }
+    return response.json();
   }
 };
