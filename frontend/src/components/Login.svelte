@@ -65,7 +65,7 @@
   <div class="login-card">
     <div class="logo">
       <span class="logo-icon">📋</span>
-      <h1>TODO管理</h1>
+      <h1>🐟 TODO管理</h1>
     </div>
 
     {#if error}

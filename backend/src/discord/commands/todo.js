@@ -24,7 +24,7 @@ module.exports = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('panel')
-        .setDescription('TODO管理パネルを表示します')
+        .setDescription('🐟 TODO管理パネルを表示します')
     )
     .addSubcommand(subcommand =>
       subcommand

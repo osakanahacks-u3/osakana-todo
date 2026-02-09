@@ -1,7 +1,7 @@
 {
-  "name": "TODO管理",
+  "name": "🐟 TODO管理",
   "short_name": "TODO",
-  "description": "Discord連携TODO管理システム",
+  "description": "Discord連携🐟 TODO管理システム",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f0f23",

@@ -42,7 +42,7 @@
   <div class="sidebar-header">
     <div class="header-content">
       <span class="logo">📋</span>
-      <h2>TODO管理</h2>
+      <h2>🐟 TODO管理</h2>
     </div>
     {#if onClose}
       <button class="close-btn" onclick={onClose} aria-label="閉じる">
