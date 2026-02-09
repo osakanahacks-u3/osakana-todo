@@ -1,7 +1,12 @@
 const Database = require('better-sqlite3');
+const fs = require('fs');
 const path = require('path');
 
-const dbPath = path.join(__dirname, '../../data/todo.db');
+const dataDir = path.join(__dirname, '../../data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+const dbPath = path.join(dataDir, 'todo.db');
 const db = new Database(dbPath);
 
 // WALモードを有効化（パフォーマンス向上）
