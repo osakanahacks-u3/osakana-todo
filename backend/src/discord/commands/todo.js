@@ -115,6 +115,70 @@ module.exports = {
       subcommand
         .setName('stats')
         .setDescription('タスクの統計を表示します')
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('assign')
+        .setDescription('タスクの担当者を追加・削除します')
+        .addIntegerOption(option =>
+          option.setName('id').setDescription('タスクID').setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName('action')
+            .setDescription('操作')
+            .setRequired(true)
+            .addChoices(
+              { name: '➕ 追加', value: 'add' },
+              { name: '➖ 削除', value: 'remove' },
+              { name: '👥 全員に設定', value: 'all' },
+              { name: '❌ 未割当に設定', value: 'none' }
+            )
+        )
+        .addUserOption(option =>
+          option.setName('user').setDescription('対象ユーザー')
+        )
+        .addStringOption(option =>
+          option.setName('group').setDescription('対象グループID')
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('priority')
+        .setDescription('タスクの優先度を変更します')
+        .addIntegerOption(option =>
+          option.setName('id').setDescription('タスクID').setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName('level')
+            .setDescription('新しい優先度')
+            .setRequired(true)
+            .addChoices(
+              { name: '🟢 低', value: 'low' },
+              { name: '🟡 中', value: 'medium' },
+              { name: '🟠 高', value: 'high' },
+              { name: '🔴 緊急', value: 'urgent' }
+            )
+        )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('progress')
+        .setDescription('タスクの進行度（ステータス）を変更します')
+        .addIntegerOption(option =>
+          option.setName('id').setDescription('タスクID').setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName('status')
+            .setDescription('新しいステータス')
+            .setRequired(true)
+            .addChoices(
+              { name: '⏳ 未処理', value: 'pending' },
+              { name: '🔄 処理中', value: 'in_progress' },
+              { name: '⏸️ 保留', value: 'on_hold' },
+              { name: '✅ 完了', value: 'completed' },
+              { name: '📋 その他', value: 'other' }
+            )
+        )
     ),
 
   async execute(interaction) {
@@ -141,6 +205,15 @@ module.exports = {
         break;
       case 'stats':
         await this.showStats(interaction);
+        break;
+      case 'assign':
+        await this.assignTask(interaction);
+        break;
+      case 'priority':
+        await this.changePriority(interaction);
+        break;
+      case 'progress':
+        await this.changeProgress(interaction);
         break;
     }
   },
@@ -360,6 +433,216 @@ module.exports = {
     // 通知送信 & メインパネル更新
     if (interaction.client.notifyTaskDeleted) {
       interaction.client.notifyTaskDeleted(task, `<@${interaction.user.id}>`);
+    }
+    if (interaction.client.updateMainPanel) {
+      interaction.client.updateMainPanel();
+    }
+  },
+
+  async assignTask(interaction) {
+    const taskId = interaction.options.getInteger('id');
+    const action = interaction.options.getString('action');
+
+    const task = TaskModel.findById(taskId);
+    if (!task) {
+      await interaction.reply({ content: '❌ タスクが見つかりませんでした', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    // 全員 / 未割当 の場合
+    if (action === 'all') {
+      TaskModel.update(taskId, { assignedType: 'all', assignedUserIds: [], assignedGroupIds: [] });
+      const updated = TaskModel.findById(taskId);
+      const embed = new EmbedBuilder()
+        .setTitle('✅ 担当者を変更しました')
+        .setColor(0x3498db)
+        .addFields(
+          { name: 'タスク', value: `#${taskId} ${updated.title}`, inline: false },
+          { name: '担当', value: '👥 全員', inline: false }
+        )
+        .setTimestamp();
+      await interaction.reply({ embeds: [embed] });
+      if (interaction.client.notifyTaskUpdated) interaction.client.notifyTaskUpdated(updated, `<@${interaction.user.id}>`, '担当者を「👥 全員」に変更');
+      if (interaction.client.updateMainPanel) interaction.client.updateMainPanel();
+      return;
+    }
+
+    if (action === 'none') {
+      TaskModel.update(taskId, { assignedType: null, assignedUserIds: [], assignedGroupIds: [] });
+      const updated = TaskModel.findById(taskId);
+      const embed = new EmbedBuilder()
+        .setTitle('✅ 担当者を変更しました')
+        .setColor(0x3498db)
+        .addFields(
+          { name: 'タスク', value: `#${taskId} ${updated.title}`, inline: false },
+          { name: '担当', value: '未割当', inline: false }
+        )
+        .setTimestamp();
+      await interaction.reply({ embeds: [embed] });
+      if (interaction.client.notifyTaskUpdated) interaction.client.notifyTaskUpdated(updated, `<@${interaction.user.id}>`, '担当者を「未割当」に変更');
+      if (interaction.client.updateMainPanel) interaction.client.updateMainPanel();
+      return;
+    }
+
+    // 追加 / 削除
+    const targetUser = interaction.options.getUser('user');
+    const targetGroupId = interaction.options.getString('group');
+
+    if (!targetUser && !targetGroupId) {
+      await interaction.reply({ content: '❌ user または group を指定してください', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    // 現在の担当ユーザー/グループを取得
+    const currentUserIds = (task.assigned_users || []).map(u => String(u.id));
+    const currentGroupIds = (task.assigned_groups || []).map(g => String(g.id));
+
+    let actionLabel = '';
+    let targetLabel = '';
+
+    if (targetUser) {
+      const dbUser = UserModel.upsert(targetUser.id, targetUser.username, targetUser.discriminator, targetUser.avatar);
+      const uid = String(dbUser.id);
+      targetLabel = `👤 ${targetUser.username}`;
+
+      if (action === 'add') {
+        if (!currentUserIds.includes(uid)) currentUserIds.push(uid);
+        actionLabel = '追加';
+      } else {
+        const idx = currentUserIds.indexOf(uid);
+        if (idx !== -1) currentUserIds.splice(idx, 1);
+        actionLabel = '削除';
+      }
+    }
+
+    if (targetGroupId) {
+      const group = GroupModel.findById(parseInt(targetGroupId));
+      if (!group) {
+        await interaction.reply({ content: `❌ グループID ${targetGroupId} が見つかりません`, flags: MessageFlags.Ephemeral });
+        return;
+      }
+      const gid = String(group.id);
+      targetLabel = targetLabel ? `${targetLabel}, 📁 ${group.name}` : `📁 ${group.name}`;
+
+      if (action === 'add') {
+        if (!currentGroupIds.includes(gid)) currentGroupIds.push(gid);
+        actionLabel = '追加';
+      } else {
+        const idx = currentGroupIds.indexOf(gid);
+        if (idx !== -1) currentGroupIds.splice(idx, 1);
+        actionLabel = '削除';
+      }
+    }
+
+    // 担当タイプを決定
+    const hasUsers = currentUserIds.length > 0;
+    const hasGroups = currentGroupIds.length > 0;
+    const assignedType = (hasUsers || hasGroups) ? 'user' : null;
+
+    TaskModel.update(taskId, {
+      assignedType,
+      assignedUserIds: currentUserIds,
+      assignedGroupIds: currentGroupIds
+    });
+
+    const fullTask = TaskModel.findById(taskId);
+
+    // 現在の担当表示を構築
+    const parts = [];
+    if (fullTask.assigned_users && fullTask.assigned_users.length > 0) {
+      parts.push(...fullTask.assigned_users.map(u => `👤 ${u.username}`));
+    }
+    if (fullTask.assigned_groups && fullTask.assigned_groups.length > 0) {
+      parts.push(...fullTask.assigned_groups.map(g => `📁 ${g.name}`));
+    }
+    const assigneeDisplay = parts.length > 0 ? parts.join(', ') : '未割当';
+
+    const embed = new EmbedBuilder()
+      .setTitle(`✅ 担当者を${actionLabel}しました`)
+      .setColor(action === 'add' ? 0x2ecc71 : 0xe74c3c)
+      .addFields(
+        { name: 'タスク', value: `#${taskId} ${fullTask.title}`, inline: false },
+        { name: `${actionLabel}対象`, value: targetLabel, inline: false },
+        { name: '現在の担当', value: assigneeDisplay, inline: false }
+      )
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+
+    if (interaction.client.notifyTaskUpdated) {
+      interaction.client.notifyTaskUpdated(fullTask, `<@${interaction.user.id}>`, `担当者に ${targetLabel} を${actionLabel}`);
+    }
+    if (interaction.client.updateMainPanel) {
+      interaction.client.updateMainPanel();
+    }
+  },
+
+  async changePriority(interaction) {
+    const taskId = interaction.options.getInteger('id');
+    const priority = interaction.options.getString('level');
+
+    const task = TaskModel.findById(taskId);
+    if (!task) {
+      await interaction.reply({ content: '❌ タスクが見つかりませんでした', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const oldPriority = PRIORITY_LABELS[task.priority] || task.priority;
+    TaskModel.update(taskId, { priority });
+    const updated = TaskModel.findById(taskId);
+
+    const embed = new EmbedBuilder()
+      .setTitle('✅ 優先度を変更しました')
+      .setColor(
+        priority === 'urgent' ? 0xe74c3c :
+        priority === 'high' ? 0xe67e22 :
+        priority === 'medium' ? 0xf1c40f : 0x2ecc71
+      )
+      .addFields(
+        { name: 'タスク', value: `#${taskId} ${updated.title}`, inline: false },
+        { name: '変更', value: `${oldPriority} → ${PRIORITY_LABELS[priority]}`, inline: false }
+      )
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+
+    if (interaction.client.notifyTaskUpdated) {
+      interaction.client.notifyTaskUpdated(updated, `<@${interaction.user.id}>`, `優先度を「${PRIORITY_LABELS[priority]}」に変更`);
+    }
+    if (interaction.client.updateMainPanel) {
+      interaction.client.updateMainPanel();
+    }
+  },
+
+  async changeProgress(interaction) {
+    const taskId = interaction.options.getInteger('id');
+    const status = interaction.options.getString('status');
+
+    const task = TaskModel.findById(taskId);
+    if (!task) {
+      await interaction.reply({ content: '❌ タスクが見つかりませんでした', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const oldStatus = STATUS_LABELS[task.status] || task.status;
+    TaskModel.update(taskId, { status });
+    const updated = TaskModel.findById(taskId);
+
+    const embed = new EmbedBuilder()
+      .setTitle('✅ ステータスを変更しました')
+      .setColor(status === 'completed' ? 0x2ecc71 : 0x3498db)
+      .addFields(
+        { name: 'タスク', value: `#${taskId} ${updated.title}`, inline: false },
+        { name: '変更', value: `${oldStatus} → ${STATUS_LABELS[status]}`, inline: false }
+      )
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+
+    if (status === 'completed' && interaction.client.notifyTaskCompleted) {
+      interaction.client.notifyTaskCompleted(updated, `<@${interaction.user.id}>`);
+    } else if (interaction.client.notifyTaskUpdated) {
+      interaction.client.notifyTaskUpdated(updated, `<@${interaction.user.id}>`, `ステータスを「${STATUS_LABELS[status]}」に変更`);
     }
     if (interaction.client.updateMainPanel) {
       interaction.client.updateMainPanel();
