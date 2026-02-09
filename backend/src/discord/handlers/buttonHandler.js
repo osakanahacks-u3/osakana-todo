@@ -45,7 +45,7 @@ module.exports = async function(interaction) {
 
     const priorityInput = new TextInputBuilder()
       .setCustomId('todo_priority')
-      .setLabel('優先度（low/medium/high）')
+      .setLabel('優先度（low/medium/high/urgent）')
       .setStyle(TextInputStyle.Short)
       .setRequired(false)
       .setPlaceholder('medium');
@@ -163,7 +163,7 @@ module.exports = async function(interaction) {
 
     const priorityInput = new TextInputBuilder()
       .setCustomId('todo_priority')
-      .setLabel('優先度（low/medium/high）')
+      .setLabel('優先度（low/medium/high/urgent）')
       .setStyle(TextInputStyle.Short)
       .setRequired(false)
       .setValue(task.priority || 'medium');

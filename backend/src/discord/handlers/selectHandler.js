@@ -48,9 +48,25 @@ module.exports = async function(interaction) {
         tasks = TaskModel.getAll({ status: 'completed', limit: 25 });
         title = '✅ 完了したタスク';
         break;
+      case 'filter_other':
+        tasks = TaskModel.getAll({ status: 'other', limit: 25 });
+        title = '📌 その他のタスク';
+        break;
+      case 'filter_urgent':
+        tasks = TaskModel.getAll({ priority: 'urgent', limit: 25 });
+        title = '🔴 優先度: 緊急のタスク';
+        break;
       case 'filter_high':
         tasks = TaskModel.getAll({ priority: 'high', limit: 25 });
-        title = '🔴 優先度: 高のタスク';
+        title = '🟠 優先度: 高のタスク';
+        break;
+      case 'filter_medium':
+        tasks = TaskModel.getAll({ priority: 'medium', limit: 25 });
+        title = '🟡 優先度: 中のタスク';
+        break;
+      case 'filter_low':
+        tasks = TaskModel.getAll({ priority: 'low', limit: 25 });
+        title = '🟢 優先度: 低のタスク';
         break;
       case 'filter_overdue':
         const allTasks = TaskModel.getAll({ limit: 100 });
@@ -82,6 +98,71 @@ module.exports = async function(interaction) {
 
     const panel = createTaskDetailPanel(task);
     await interaction.editReply(panel);
+    return;
+  }
+
+  // 優先度変更
+  if (customId.startsWith('task_priority_change:')) {
+    const taskId = customId.replace('task_priority_change:', '');
+    const newPriority = value;
+
+    const task = TaskModel.update(taskId, { priority: newPriority });
+
+    if (!task) {
+      await interaction.reply({ content: '❌ タスクが見つかりません', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const updatedTask = TaskModel.findById(taskId);
+    const panel = createTaskDetailPanel(updatedTask);
+    await interaction.update(panel);
+
+    if (client.notifyTaskUpdated) {
+      client.notifyTaskUpdated(updatedTask, `<@${interaction.user.id}>`, `優先度を「${PRIORITY_LABELS[newPriority]}」に変更`);
+    }
+    if (client.updateMainPanel) {
+      client.updateMainPanel();
+    }
+    return;
+  }
+
+  // 担当者変更
+  if (customId.startsWith('task_assign_change:')) {
+    const taskId = customId.replace('task_assign_change:', '');
+    const task = TaskModel.findById(taskId);
+
+    if (!task) {
+      await interaction.reply({ content: '❌ タスクが見つかりません', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    let updateData = {};
+    let changeDescription = '';
+
+    if (value === 'assign_none') {
+      updateData = { assignedType: null, assignedUserIds: [], assignedGroupId: null };
+      changeDescription = '担当者を「未割当」に変更';
+    } else if (value === 'assign_all') {
+      updateData = { assignedType: 'all', assignedUserIds: [], assignedGroupId: null };
+      changeDescription = '担当者を「全員」に変更';
+    } else if (value.startsWith('assign_user:')) {
+      const userId = parseInt(value.replace('assign_user:', ''));
+      updateData = { assignedType: 'user', assignedUserIds: [userId], assignedGroupId: null };
+      const assignedUser = UserModel.findById(userId);
+      changeDescription = `担当者を「${assignedUser?.username || '不明'}」に変更`;
+    }
+
+    TaskModel.update(taskId, updateData);
+    const updatedTask = TaskModel.findById(taskId);
+    const panel = createTaskDetailPanel(updatedTask);
+    await interaction.update(panel);
+
+    if (client.notifyTaskUpdated) {
+      client.notifyTaskUpdated(updatedTask, `<@${interaction.user.id}>`, changeDescription, { assignmentChanged: true });
+    }
+    if (client.updateMainPanel) {
+      client.updateMainPanel();
+    }
     return;
   }
 

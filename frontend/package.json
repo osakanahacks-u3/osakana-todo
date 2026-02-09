@@ -7,7 +7,7 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "deploy": "astro build && mkdir ../backend/public/ && cp -r dist/* ../backend/public/",
+    "deploy": "astro build && rm -rf ../backend/public && mkdir -p ../backend/public && cp -r dist/* ../backend/public/",
     "astro": "astro"
   },
   "dependencies": {

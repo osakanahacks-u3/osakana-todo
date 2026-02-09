@@ -21,7 +21,7 @@ module.exports = async function(interaction) {
     const dueDateStr = interaction.fields.getTextInputValue('todo_due_date') || null;
 
     // 優先度の検証
-    if (!['low', 'medium', 'high'].includes(priority)) {
+    if (!['low', 'medium', 'high', 'urgent'].includes(priority)) {
       priority = 'medium';
     }
 
@@ -90,24 +90,25 @@ module.exports = async function(interaction) {
     const dueDateStr = interaction.fields.getTextInputValue('todo_due_date') || null;
 
     // 優先度の検証
-    if (!['low', 'medium', 'high'].includes(priority)) {
+    if (!['low', 'medium', 'high', 'urgent'].includes(priority)) {
       priority = 'medium';
     }
 
-    // 期限の検証
+    // 期限の検証・削除対応
     let dueDate = null;
-    if (dueDateStr) {
+    if (dueDateStr && dueDateStr.trim() !== '') {
       const parsed = new Date(dueDateStr);
       if (!isNaN(parsed.getTime())) {
         dueDate = parsed.toISOString();
       }
     }
+    // dueDateStr が空欄なら dueDate = null で期限を削除
 
     const task = TaskModel.update(taskId, {
       title,
       description,
       priority,
-      due_date: dueDate
+      dueDate: dueDate
     });
 
     if (!task) {

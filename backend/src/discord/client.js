@@ -364,6 +364,9 @@ client.once('clientReady', async () => {
   
   // パネル設置チャンネルがあれば初期パネルを送信/更新
   await updateMainPanel();
+
+  // 期限日当日通知スケジューラーを開始
+  startDueDateNotifier();
 });
 
 client.on('interactionCreate', async (interaction) => {
@@ -418,6 +421,92 @@ client.on('interactionCreate', async (interaction) => {
     }
   }
 });
+
+/**
+ * 期限日当日の通知を送信（日本時間0時に実行）
+ */
+async function sendDueDateNotifications() {
+  const notifyChannelId = process.env.NOTIFY_CHANNEL_ID;
+  if (!notifyChannelId || !client.isReady()) return;
+
+  try {
+    const { TaskModel } = require('../database/models');
+    const allTasks = TaskModel.getAll({ limit: 500 });
+
+    // 日本時間で「今日」の日付を取得
+    const nowJST = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const todayStr = nowJST.toISOString().split('T')[0]; // YYYY-MM-DD
+
+    const dueTodayTasks = allTasks.filter(t => {
+      if (!t.due_date || t.status === 'completed') return false;
+      const taskDateStr = new Date(t.due_date).toISOString().split('T')[0];
+      return taskDateStr === todayStr;
+    });
+
+    if (dueTodayTasks.length === 0) return;
+
+    const channel = await client.channels.fetch(notifyChannelId);
+    if (!channel || !channel.isTextBased()) return;
+
+    const embed = new EmbedBuilder()
+      .setColor(0xe67e22)
+      .setTitle('⏰ 本日が期限のタスク')
+      .setDescription(
+        dueTodayTasks.map(t => {
+          const assignee = getAssigneeMention(t);
+          const priority = t.priority === 'urgent' ? '🔴緊急' : t.priority === 'high' ? '🟠高' : t.priority === 'medium' ? '🟡中' : '🟢低';
+          return `• **${t.title}** (${priority}) - 担当: ${assignee}`;
+        }).join('\n')
+      )
+      .setFooter({ text: `${dueTodayTasks.length}件のタスクが本日期限です` })
+      .setTimestamp();
+
+    // 担当者のメンションを収集
+    const mentions = new Set();
+    for (const t of dueTodayTasks) {
+      const mention = buildMentionForAssignee(t);
+      if (mention) mentions.add(mention);
+    }
+
+    const payload = { embeds: [embed] };
+    if (mentions.size > 0) {
+      payload.content = [...mentions].join(' ');
+    }
+
+    await channel.send(payload);
+    console.log(`Due date notification sent for ${dueTodayTasks.length} tasks`);
+  } catch (error) {
+    console.error('Failed to send due date notifications:', error.message);
+  }
+}
+
+/**
+ * 期限日通知スケジューラーを開始
+ * 日本時間0:00に毎日通知を送信
+ */
+function startDueDateNotifier() {
+  function scheduleNext() {
+    const now = new Date();
+    // 次の日本時間0:00を計算 (JST = UTC+9)
+    const nowJST = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const tomorrowJST = new Date(nowJST);
+    tomorrowJST.setUTCHours(0, 0, 0, 0);
+    tomorrowJST.setUTCDate(tomorrowJST.getUTCDate() + 1);
+    // UTC に戻す
+    const nextMidnightUTC = new Date(tomorrowJST.getTime() - 9 * 60 * 60 * 1000);
+    const msUntilMidnight = nextMidnightUTC.getTime() - now.getTime();
+
+    console.log(`Next due date notification scheduled in ${Math.round(msUntilMidnight / 1000 / 60)} minutes`);
+
+    setTimeout(async () => {
+      await sendDueDateNotifications();
+      scheduleNext();
+    }, msUntilMidnight);
+  }
+
+  scheduleNext();
+  console.log('Due date notifier started (JST midnight)');
+}
 
 // 通知関数をエクスポート
 client.notifyTaskCreated = notifyTaskCreated;

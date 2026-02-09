@@ -1,5 +1,5 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
-const TaskModel = require('../../database/models').TaskModel;
+const { TaskModel, UserModel } = require('../../database/models');
 
 /**
  * 担当者表示文字列を生成（複数ユーザー対応）
@@ -66,7 +66,11 @@ async function createMainPanel() {
           { label: '進行中のタスク', value: 'filter_in_progress', emoji: '🔄' },
           { label: '保留中のタスク', value: 'filter_on_hold', emoji: '⏸️' },
           { label: '完了したタスク', value: 'filter_completed', emoji: '✅' },
-          { label: '優先度: 高', value: 'filter_high', emoji: '🔴' },
+          { label: 'その他のタスク', value: 'filter_other', emoji: '📌' },
+          { label: '優先度: 緊急', value: 'filter_urgent', emoji: '🔴' },
+          { label: '優先度: 高', value: 'filter_high', emoji: '🟠' },
+          { label: '優先度: 中', value: 'filter_medium', emoji: '🟡' },
+          { label: '優先度: 低', value: 'filter_low', emoji: '🟢' },
           { label: '期限切れ', value: 'filter_overdue', emoji: '⚠️' },
         ]),
     );
@@ -96,7 +100,8 @@ function createTaskListPanel(tasks, title = 'タスク一覧', page = 1, totalPa
   };
 
   const priorityEmojis = {
-    high: '🔴',
+    urgent: '🔴',
+    high: '🟠',
     medium: '🟡',
     low: '🟢',
   };
@@ -166,7 +171,8 @@ function createTaskDetailPanel(task) {
   };
 
   const priorityLabels = {
-    high: '🔴 高',
+    urgent: '🔴 緊急',
+    high: '🟠 高',
     medium: '🟡 中',
     low: '🟢 低',
   };
@@ -209,6 +215,27 @@ function createTaskDetailPanel(task) {
 
   const row2 = new ActionRowBuilder()
     .addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`task_priority_change:${task.id}`)
+        .setPlaceholder('⚡ 優先度変更')
+        .addOptions([
+          { label: '緊急', value: 'urgent', emoji: '🔴' },
+          { label: '高', value: 'high', emoji: '🟠' },
+          { label: '中', value: 'medium', emoji: '🟡' },
+          { label: '低', value: 'low', emoji: '🟢' },
+        ]),
+    );
+
+  const row3 = new ActionRowBuilder()
+    .addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(`task_assign_change:${task.id}`)
+        .setPlaceholder('👤 担当者変更')
+        .addOptions(buildAssigneeOptions(task)),
+    );
+
+  const row4 = new ActionRowBuilder()
+    .addComponents(
       new ButtonBuilder()
         .setCustomId(`task_edit:${task.id}`)
         .setLabel('編集')
@@ -231,7 +258,7 @@ function createTaskDetailPanel(task) {
         .setEmoji('🏠'),
     );
 
-  return { embeds: [embed], components: [row1, row2] };
+  return { embeds: [embed], components: [row1, row2, row3, row4] };
 }
 
 /**
@@ -275,6 +302,43 @@ function createStatsPanel(stats) {
     );
 
   return { embeds: [embed], components: [row] };
+}
+
+/**
+ * 担当者変更用のセレクトメニューオプションを構築
+ */
+function buildAssigneeOptions(task) {
+  const options = [];
+
+  // 「未割当」オプション
+  options.push({
+    label: '未割当にする',
+    value: 'assign_none',
+    emoji: '❌',
+    description: '担当者を解除',
+  });
+
+  // 「全員」オプション
+  options.push({
+    label: '全員に割り当て',
+    value: 'assign_all',
+    emoji: '👥',
+    description: '全メンバーに割り当て',
+  });
+
+  // 登録済みユーザー一覧
+  const users = UserModel.getAll();
+  for (const user of users.slice(0, 23)) { // セレクトメニュー上限25 - 2
+    const isAssigned = task.assigned_users?.some(u => u.id === user.id);
+    options.push({
+      label: `${user.username}`,
+      value: `assign_user:${user.id}`,
+      emoji: isAssigned ? '✅' : '👤',
+      description: isAssigned ? '現在の担当者' : 'この人に割り当て',
+    });
+  }
+
+  return options;
 }
 
 module.exports = {
