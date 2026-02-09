@@ -130,13 +130,16 @@ module.exports = async function(interaction) {
   // ソート切り替え（タスク一覧パネル上）
   if (customId === 'panel_sort' || customId.startsWith('panel_sort:')) {
     let sort = undefined;
-    let sortLabel = '作成日順';
-    if (value === 'sort_id') { sort = 'id'; sortLabel = 'ID順'; }
-    else if (value === 'sort_priority') { sort = 'priority'; sortLabel = '優先度順'; }
+    let sortOrder = undefined;
+    let sortLabel = 'ID・作成日順（降順）';
+    if (value === 'sort_id_asc') { sort = 'id'; sortOrder = 'asc'; sortLabel = 'ID・作成日順（昇順）'; }
+    else if (value === 'sort_id_desc') { sort = 'id'; sortOrder = 'desc'; sortLabel = 'ID・作成日順（降順）'; }
+    else if (value === 'sort_priority_desc') { sort = 'priority'; sortOrder = 'desc'; sortLabel = '優先度順（高→低）'; }
+    else if (value === 'sort_priority_asc') { sort = 'priority'; sortOrder = 'asc'; sortLabel = '優先度順（低→高）'; }
 
     // フィルター条件をcustomIdからパース
     let filterContext = null;
-    let filters = { limit: 25, sort };
+    let filters = { limit: 25, sort, sortOrder };
     let titlePrefix = '📁 全タスク';
     if (customId.startsWith('panel_sort:')) {
       try {
@@ -149,7 +152,7 @@ module.exports = async function(interaction) {
 
     if (filterContext && filterContext.overdue) {
       // 期限切れフィルターは特殊処理
-      const allTasks = TaskModel.getAll({ limit: 100, sort });
+      const allTasks = TaskModel.getAll({ limit: 100, sort, sortOrder });
       const now = new Date();
       const overdueTasks = allTasks.filter(t => t.due_date && new Date(t.due_date) < now && t.status !== 'completed');
       const panel = createTaskListPanel(overdueTasks, `${titlePrefix}（${sortLabel}）`, 1, 1, filterContext);

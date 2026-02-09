@@ -244,18 +244,18 @@ const TaskModel = {
       params.push(filters.priority);
     }
 
-    // ソート: priority = 優先度高い順, id = ID順（デフォルト: 作成日時降順）
+    // ソート: priority = 優先度順, それ以外 = ID順（デフォルト: ID降順）
+    const sortOrder = filters.sortOrder === 'asc' ? 'ASC' : 'DESC';
     if (filters.sort === 'priority') {
+      const priorityDir = filters.sortOrder === 'asc' ? 'DESC' : 'ASC';
       query += ` ORDER BY CASE t.priority 
         WHEN 'urgent' THEN 0 
         WHEN 'high' THEN 1 
         WHEN 'medium' THEN 2 
         WHEN 'low' THEN 3 
-        ELSE 4 END ASC, t.id DESC`;
-    } else if (filters.sort === 'id') {
-      query += ' ORDER BY t.id ASC';
+        ELSE 4 END ${priorityDir}, t.id DESC`;
     } else {
-      query += ' ORDER BY t.created_at DESC';
+      query += ` ORDER BY t.id ${sortOrder}`;
     }
 
     if (filters.limit) {
@@ -308,17 +308,17 @@ const TaskModel = {
     }
 
     // ソート
+    const sortOrder = filters.sortOrder === 'asc' ? 'ASC' : 'DESC';
     if (filters.sort === 'priority') {
+      const priorityDir = filters.sortOrder === 'asc' ? 'DESC' : 'ASC';
       query += ` ORDER BY CASE t.priority 
         WHEN 'urgent' THEN 0 
         WHEN 'high' THEN 1 
         WHEN 'medium' THEN 2 
         WHEN 'low' THEN 3 
-        ELSE 4 END ASC, t.id DESC`;
-    } else if (filters.sort === 'id') {
-      query += ' ORDER BY t.id ASC';
+        ELSE 4 END ${priorityDir}, t.id DESC`;
     } else {
-      query += ' ORDER BY t.created_at DESC';
+      query += ` ORDER BY t.id ${sortOrder}`;
     }
 
     const tasks = db.prepare(query).all(...params);
