@@ -31,7 +31,7 @@ async function createMainPanel() {
     .setTitle('📋 TODO管理パネル')
     .setDescription('ボタンをクリックして操作してください')
     .addFields(
-      { name: '📊 統計', value: `全体: ${stats.total} | 完了: ${stats.completed} | 進行中: ${stats.inProgress}`, inline: false },
+      { name: '📊 統計', value: `全体: ${stats.total} | 未着手: ${stats.pending} | 進行中: ${stats.in_progress} | 完了: ${stats.completed}`, inline: false },
       { name: '🔗 Webアプリ', value: `[こちらをクリック](${process.env.BASE_URL})`, inline: true },
     )
     .setFooter({ text: 'TODO管理システム' })
@@ -144,6 +144,19 @@ function createTaskListPanel(tasks, title = 'タスク一覧', page = 1, totalPa
       );
     components.push(selectRow);
   }
+
+  const sortRow = new ActionRowBuilder()
+    .addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('panel_sort')
+        .setPlaceholder('🔀 並び替え')
+        .addOptions([
+          { label: 'ID順', value: 'sort_id', emoji: '🔢', description: 'タスクIDの昇順' },
+          { label: '優先度順', value: 'sort_priority', emoji: '🎯', description: '緊急 → 高 → 中 → 低' },
+          { label: '作成日順', value: 'sort_created', emoji: '📅', description: '新しい順（デフォルト）' },
+        ]),
+    );
+  components.push(sortRow);
 
   const buttonRow = new ActionRowBuilder()
     .addComponents(
@@ -278,12 +291,22 @@ function createStatsPanel(stats) {
     .addFields(
       { name: '📋 総タスク数', value: `${stats.total}`, inline: true },
       { name: '✅ 完了', value: `${stats.completed}`, inline: true },
-      { name: '🔄 進行中', value: `${stats.inProgress}`, inline: true },
+      { name: '🔄 進行中', value: `${stats.in_progress}`, inline: true },
       { name: '⏳ 未着手', value: `${stats.pending}`, inline: true },
-      { name: '⏸️ 保留中', value: `${stats.onHold}`, inline: true },
+      { name: '⏸️ 保留中', value: `${stats.on_hold}`, inline: true },
       { name: '📌 その他', value: `${stats.other}`, inline: true },
     )
     .setTimestamp();
+
+  // 優先度別統計を追加（完了以外）
+  embed.addFields(
+    { name: '\u200b', value: '**🎯 優先度別（未完了）**', inline: false },
+    { name: '🔴 緊急', value: `${stats.urgent || 0}`, inline: true },
+    { name: '🟠 高', value: `${stats.high || 0}`, inline: true },
+    { name: '🟡 中', value: `${stats.medium || 0}`, inline: true },
+    { name: '🟢 低', value: `${stats.low || 0}`, inline: true },
+    { name: '➖ なし', value: `${stats.no_priority || 0}`, inline: true },
+  );
 
   if (stats.total > 0) {
     const completionRate = Math.round((stats.completed / stats.total) * 100);

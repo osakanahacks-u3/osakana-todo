@@ -24,6 +24,19 @@ module.exports = async function(interaction) {
 
   // === パネルセレクト ===
 
+  // ソート切り替え（タスク一覧パネル上）
+  if (customId === 'panel_sort') {
+    let sort = undefined;
+    let sortLabel = '作成日順';
+    if (value === 'sort_id') { sort = 'id'; sortLabel = 'ID順'; }
+    else if (value === 'sort_priority') { sort = 'priority'; sortLabel = '優先度順'; }
+
+    const tasks = TaskModel.getAll({ limit: 25, sort });
+    const panel = createTaskListPanel(tasks, `📁 全タスク（${sortLabel}）`);
+    await interaction.update(panel);
+    return;
+  }
+
   // クイックフィルター
   if (customId === 'panel_quick_filter') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });

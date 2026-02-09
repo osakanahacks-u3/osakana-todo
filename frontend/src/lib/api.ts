@@ -113,11 +113,12 @@ export const tasks = {
     return fetchApi(`/api/tasks${query ? `?${query}` : ''}`);
   },
 
-  async getMy(filters: { priority?: string; assignedType?: string; status?: string } = {}) {
+  async getMy(filters: { priority?: string; assignedType?: string; status?: string; sort?: string } = {}) {
     const params = new URLSearchParams();
     if (filters.priority) params.append('priority', filters.priority);
     if (filters.assignedType) params.append('assignedType', filters.assignedType);
     if (filters.status) params.append('status', filters.status);
+    if (filters.sort) params.append('sort', filters.sort);
     const query = params.toString();
     return fetchApi(`/api/tasks/my${query ? `?${query}` : ''}`);
   },

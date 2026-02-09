@@ -244,7 +244,19 @@ const TaskModel = {
       params.push(filters.priority);
     }
 
-    query += ' ORDER BY t.created_at DESC';
+    // ソート: priority = 優先度高い順, id = ID順（デフォルト: 作成日時降順）
+    if (filters.sort === 'priority') {
+      query += ` ORDER BY CASE t.priority 
+        WHEN 'urgent' THEN 0 
+        WHEN 'high' THEN 1 
+        WHEN 'medium' THEN 2 
+        WHEN 'low' THEN 3 
+        ELSE 4 END ASC, t.id DESC`;
+    } else if (filters.sort === 'id') {
+      query += ' ORDER BY t.id ASC';
+    } else {
+      query += ' ORDER BY t.created_at DESC';
+    }
 
     if (filters.limit) {
       query += ' LIMIT ?';
@@ -295,7 +307,19 @@ const TaskModel = {
       params.push(filters.status);
     }
 
-    query += ' ORDER BY t.created_at DESC';
+    // ソート
+    if (filters.sort === 'priority') {
+      query += ` ORDER BY CASE t.priority 
+        WHEN 'urgent' THEN 0 
+        WHEN 'high' THEN 1 
+        WHEN 'medium' THEN 2 
+        WHEN 'low' THEN 3 
+        ELSE 4 END ASC, t.id DESC`;
+    } else if (filters.sort === 'id') {
+      query += ' ORDER BY t.id ASC';
+    } else {
+      query += ' ORDER BY t.created_at DESC';
+    }
 
     const tasks = db.prepare(query).all(...params);
     return this._attachAssigneesBatch(tasks);
@@ -390,6 +414,7 @@ const TaskModel = {
       params.push(data.status);
       if (data.status === 'completed') {
         fields.push('completed_at = CURRENT_TIMESTAMP');
+        fields.push('priority = NULL');
       }
     }
     if (data.priority !== undefined) { fields.push('priority = ?'); params.push(data.priority); }
@@ -459,7 +484,12 @@ const TaskModel = {
         SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
         SUM(CASE WHEN status = 'on_hold' THEN 1 ELSE 0 END) as on_hold,
         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-        SUM(CASE WHEN status = 'other' THEN 1 ELSE 0 END) as other
+        SUM(CASE WHEN status = 'other' THEN 1 ELSE 0 END) as other,
+        SUM(CASE WHEN status != 'completed' AND priority = 'urgent' THEN 1 ELSE 0 END) as urgent,
+        SUM(CASE WHEN status != 'completed' AND priority = 'high' THEN 1 ELSE 0 END) as high,
+        SUM(CASE WHEN status != 'completed' AND priority = 'medium' THEN 1 ELSE 0 END) as medium,
+        SUM(CASE WHEN status != 'completed' AND priority = 'low' THEN 1 ELSE 0 END) as low,
+        SUM(CASE WHEN status != 'completed' AND (priority IS NULL OR priority = '') THEN 1 ELSE 0 END) as no_priority
       FROM tasks
     `).get();
     return stats;

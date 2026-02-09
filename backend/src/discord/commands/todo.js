@@ -669,7 +669,15 @@ module.exports = {
       ? Math.round((stats.completed / stats.total) * 100) 
       : 0;
 
-    embed.addFields({ name: '✨ 完了率', value: `${completionRate}%`, inline: false });
+    embed.addFields(
+      { name: '✨ 完了率', value: `${completionRate}%`, inline: false },
+      { name: '\u200b', value: '**🎯 優先度別（未完了）**', inline: false },
+      { name: '🔴 緊急', value: `${stats.urgent || 0}件`, inline: true },
+      { name: '🟠 高', value: `${stats.high || 0}件`, inline: true },
+      { name: '🟡 中', value: `${stats.medium || 0}件`, inline: true },
+      { name: '🟢 低', value: `${stats.low || 0}件`, inline: true },
+      { name: '➖ なし', value: `${stats.no_priority || 0}件`, inline: true },
+    );
 
     await interaction.reply({ embeds: [embed] });
   }
