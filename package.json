@@ -1,0 +1,19 @@
+{
+  "name": "todo",
+  "version": "1.0.0",
+  "description": "Discord × Web のTODO管理ツール",
+  "main": "ecosystem.config.js",
+  "scripts": {
+    "setup": "node setup.js",
+    "start": "pm2 start ecosystem.config.js",
+    "restart": "pm2 restart todo",
+    "stop": "pm2 stop todo",
+    "logs": "pm2 logs todo",
+    "build": "cd frontend && npm run deploy",
+    "deploy-commands": "cd backend && npm run deploy-commands"
+  },
+  "keywords": ["todo", "discord", "task-management"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

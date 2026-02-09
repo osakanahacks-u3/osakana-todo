@@ -1,0 +1,26 @@
+{
+  "name": "todo-backend",
+  "version": "1.0.0",
+  "description": "Discord連携TODO管理ツール バックエンド",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "deploy-commands": "node src/discord/deploy-commands.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.6",
+    "discord.js": "^14.25.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
+    "node-os-utils": "^2.0.1",
+    "uuid": "^13.0.0"
+  }
+}

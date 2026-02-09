@@ -1,0 +1,532 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { auth, tasks, groups, users, exportTasks } from '../lib/api';
+  import TaskList from './TaskList.svelte';
+  import TaskForm from './TaskForm.svelte';
+  import TaskDetail from './TaskDetail.svelte';
+  import GroupManager from './GroupManager.svelte';
+  import Sidebar from './Sidebar.svelte';
+
+  let currentUser = $state<any>(null);
+  let loading = $state(true);
+  let activeView = $state<'tasks' | 'groups'>('tasks');
+  let taskFilter = $state<{ status?: string; assignedUserId?: string; priority?: string; assignedType?: string }>({});
+  let showTaskForm = $state(false);
+  let selectedTaskId = $state<string | null>(null);
+  let stats = $state<any>(null);
+  let allUsers = $state<any[]>([]);
+  let allGroups = $state<any[]>([]);
+  let sidebarOpen = $state(false);
+  let showExportMenu = $state(false);
+
+  onMount(async () => {
+    if (!auth.isLoggedIn()) {
+      window.location.href = '/login';
+      return;
+    }
+
+    try {
+      const session = await auth.checkSession();
+      if (!session?.valid) {
+        window.location.href = '/login';
+        return;
+      }
+      currentUser = session.user;
+      await loadData();
+    } catch (e) {
+      window.location.href = '/login';
+    } finally {
+      loading = false;
+    }
+  });
+
+  async function loadData() {
+    const [statsData, usersData, groupsData] = await Promise.all([
+      tasks.getStats(),
+      users.getAll().catch(() => []),
+      groups.getAll().catch(() => [])
+    ]);
+    stats = statsData;
+    allUsers = usersData;
+    allGroups = groupsData;
+  }
+
+  async function handleLogout() {
+    await auth.logout();
+    window.location.href = '/login';
+  }
+
+  // TaskListの再読み込みをトリガーするカウンター
+  let taskListVersion = $state(0);
+
+  function handleTaskCreated() {
+    showTaskForm = false;
+    taskListVersion++;
+    refreshStats();
+  }
+
+  function handleTaskUpdated() {
+    taskListVersion++;
+    refreshStats();
+  }
+
+  function handleTaskClosed() {
+    selectedTaskId = null;
+  }
+
+  async function refreshStats() {
+    try {
+      stats = await tasks.getStats();
+    } catch (e) {
+      console.error('Failed to refresh stats:', e);
+    }
+  }
+
+  async function handleExport(format: 'txt' | 'csv' | 'json') {
+    showExportMenu = false;
+    try {
+      const data = format === 'txt' 
+        ? await exportTasks.asTxt(taskFilter)
+        : format === 'csv'
+        ? await exportTasks.asCsv(taskFilter)
+        : await exportTasks.asJson(taskFilter);
+      
+      const mimeType = format === 'json' 
+        ? 'application/json' 
+        : format === 'csv' 
+        ? 'text/csv' 
+        : 'text/plain';
+      
+      const content = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+      exportTasks.downloadFile(content, `tasks.${format}`, mimeType);
+    } catch (e) {
+      console.error('Export failed:', e);
+    }
+  }
+
+  function toggleSidebar() {
+    sidebarOpen = !sidebarOpen;
+  }
+
+  function closeSidebar() {
+    sidebarOpen = false;
+  }
+</script>
+
+{#if loading}
+  <div class="loading-screen">
+    <div class="spinner"></div>
+    <p>読み込み中...</p>
+  </div>
+{:else}
+  <div class="dashboard" class:sidebar-open={sidebarOpen}>
+    <!-- Mobile Overlay -->
+    {#if sidebarOpen}
+      <div class="sidebar-overlay" onclick={closeSidebar} onkeydown={(e) => e.key === 'Escape' && closeSidebar()} role="button" tabindex="-1" aria-label="サイドバーを閉じる"></div>
+    {/if}
+
+    <Sidebar
+      {stats}
+      {currentUser}
+      {activeView}
+      {taskFilter}
+      isOpen={sidebarOpen}
+      onViewChange={(view) => { activeView = view; closeSidebar(); }}
+      onFilterChange={(filter) => { taskFilter = filter; closeSidebar(); }}
+      onLogout={handleLogout}
+      onClose={closeSidebar}
+    />
+
+    <main class="main-content">
+      <header class="main-header">
+        <div class="header-left">
+          <button class="menu-toggle" onclick={toggleSidebar} aria-label="メニュー">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <h1>
+            {#if activeView === 'tasks'}
+              📋 タスク
+            {:else}
+              👥 グループ
+            {/if}
+          </h1>
+        </div>
+        <div class="header-actions">
+          {#if activeView === 'tasks'}
+            <button class="btn btn-primary" onclick={() => showTaskForm = true}>
+              <span class="btn-icon">➕</span>
+              <span class="btn-text">新規</span>
+            </button>
+            <div class="export-dropdown">
+              <button class="btn btn-secondary" onclick={() => showExportMenu = !showExportMenu}>
+                <span class="btn-icon">📥</span>
+                <span class="btn-text">出力</span>
+              </button>
+              {#if showExportMenu}
+                <div class="dropdown-menu">
+                  <button onclick={() => handleExport('txt')}>📄 TXT形式</button>
+                  <button onclick={() => handleExport('csv')}>📊 CSV形式</button>
+                  <button onclick={() => handleExport('json')}>📋 JSON形式</button>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      </header>
+
+      <div class="content-area scroll-container">
+        {#if activeView === 'tasks'}
+          <TaskList 
+            filter={taskFilter}
+            version={taskListVersion}
+            onSelect={(id) => selectedTaskId = id}
+            onRefresh={refreshStats}
+          />
+        {:else}
+          <GroupManager 
+            {allUsers}
+            onRefresh={loadData}
+          />
+        {/if}
+      </div>
+
+      <!-- Mobile Bottom Navigation -->
+      <nav class="mobile-nav safe-area-bottom">
+        <button 
+          class="mobile-nav-item" 
+          class:active={activeView === 'tasks'}
+          onclick={() => activeView = 'tasks'}
+        >
+          <span class="nav-icon">📋</span>
+          <span class="nav-label">タスク</span>
+        </button>
+        <button 
+          class="mobile-nav-fab"
+          onclick={() => showTaskForm = true}
+          aria-label="新規タスク"
+        >
+          <span>➕</span>
+        </button>
+        <button 
+          class="mobile-nav-item"
+          class:active={activeView === 'groups'}
+          onclick={() => activeView = 'groups'}
+        >
+          <span class="nav-icon">👥</span>
+          <span class="nav-label">グループ</span>
+        </button>
+      </nav>
+    </main>
+
+    {#if showTaskForm}
+      <TaskForm
+        {allUsers}
+        {allGroups}
+        onClose={() => showTaskForm = false}
+        onCreated={handleTaskCreated}
+      />
+    {/if}
+
+    {#if selectedTaskId}
+      <TaskDetail
+        taskId={selectedTaskId}
+        {allUsers}
+        {allGroups}
+        {currentUser}
+        onClose={handleTaskClosed}
+        onUpdated={handleTaskUpdated}
+      />
+    {/if}
+  </div>
+{/if}
+
+<style>
+  .loading-screen {
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: var(--bg-primary);
+  }
+
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .dashboard {
+    display: flex;
+    min-height: 100vh;
+    min-height: 100dvh;
+    position: relative;
+  }
+
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 90;
+  }
+
+  .main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .main-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    min-height: var(--header-height);
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .menu-toggle {
+    display: none;
+    padding: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+  }
+
+  .menu-toggle:hover {
+    background: var(--bg-tertiary);
+  }
+
+  .main-header h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn {
+    padding: 10px 16px;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: var(--transition);
+  }
+
+  .btn-icon {
+    font-size: 16px;
+  }
+
+  .btn-primary {
+    background: var(--primary);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: var(--primary-dark);
+    transform: translateY(-1px);
+  }
+
+  .btn-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+  }
+
+  .btn-secondary:hover {
+    background: var(--border-color);
+  }
+
+  .export-dropdown {
+    position: relative;
+  }
+
+  .dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 6px;
+    z-index: 100;
+    min-width: 140px;
+    box-shadow: var(--shadow);
+  }
+
+  .dropdown-menu button {
+    width: 100%;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 14px;
+    text-align: left;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .dropdown-menu button:hover {
+    background: var(--bg-tertiary);
+  }
+
+  .content-area {
+    flex: 1;
+    padding: 20px 24px;
+    overflow-y: auto;
+  }
+
+  /* Mobile Navigation */
+  .mobile-nav {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    height: var(--mobile-nav-height);
+    padding: 0 16px;
+    z-index: 80;
+  }
+
+  .mobile-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 8px;
+    transition: var(--transition);
+  }
+
+  .mobile-nav-item.active {
+    color: var(--primary);
+  }
+
+  .nav-icon {
+    font-size: 20px;
+  }
+
+  .nav-label {
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .mobile-nav-fab {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    font-size: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: -20px;
+    box-shadow: var(--shadow);
+    transition: var(--transition);
+  }
+
+  .mobile-nav-fab:hover {
+    background: var(--primary-dark);
+    transform: scale(1.05);
+  }
+
+  /* Tablet & Mobile */
+  @media (max-width: 1024px) {
+    .content-area {
+      padding: 16px 20px;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .sidebar-overlay {
+      display: block;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    .dashboard.sidebar-open .sidebar-overlay {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .menu-toggle {
+      display: flex;
+    }
+
+    .main-header {
+      padding: 12px 16px;
+    }
+
+    .main-header h1 {
+      font-size: 1.1rem;
+    }
+
+    .header-actions {
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .btn-text {
+      display: none;
+    }
+
+    .content-area {
+      padding: 16px;
+      padding-bottom: calc(var(--mobile-nav-height) + 20px);
+    }
+
+    .mobile-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .main-header h1 {
+      font-size: 1rem;
+    }
+  }
+</style>
