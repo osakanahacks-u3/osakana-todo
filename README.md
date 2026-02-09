@@ -205,6 +205,10 @@ server {
 ```
 
 ```bash
+# sites-available に保存後、sites-enabled にシンボリックリンク
+sudo ln -s /etc/nginx/sites-available/todo.example.com /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
 # SSL 証明書取得（Nginx設定は自動で更新されます）
 sudo certbot --nginx -d todo.example.com
 ```
