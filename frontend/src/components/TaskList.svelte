@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { tasks } from '../lib/api';
+  import { onMount } from 'svelte';
+  import { tasks, config } from '../lib/api';
 
   interface Props {
     filter: { status?: string; assignedUserId?: string; priority?: string; assignedType?: string; sort?: string; sortOrder?: string };
@@ -112,12 +113,18 @@
     }
   }
 
+  let timezone = $state('Asia/Tokyo');
+
+  onMount(() => {
+    config.getTimezone().then(tz => { timezone = tz; });
+  });
+
   function formatDate(dateStr: string): string {
     if (!dateStr) return '';
     const date = new Date(dateStr);
     const now = new Date();
     const isOverdue = date < now;
-    return `${isOverdue ? '⚠️ ' : ''}${date.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}`;
+    return `${isOverdue ? '⚠️ ' : ''}${date.toLocaleDateString('ja-JP', { timeZone: timezone, month: 'short', day: 'numeric' })}`;
   }
 
   function getAssignee(task: any): string {
@@ -177,6 +184,9 @@
 
         <div class="task-meta">
           <span class="task-assignee">{getAssignee(task)}</span>
+          {#if task.comment_count > 0}
+            <span class="task-comments">💬 {task.comment_count}</span>
+          {/if}
           {#if task.due_date}
             <span class="task-due" class:overdue={new Date(task.due_date) < new Date()}>📅 {formatDate(task.due_date)}</span>
           {/if}
@@ -369,6 +379,11 @@
   .task-due.overdue {
     color: var(--danger);
     font-weight: 600;
+  }
+
+  .task-comments {
+    color: var(--text-muted);
+    font-size: 12px;
   }
 
   .task-footer {

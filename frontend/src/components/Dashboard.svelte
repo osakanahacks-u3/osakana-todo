@@ -249,7 +249,18 @@
       {currentUser}
       {activeView}
       isOpen={sidebarOpen}
+      {taskFilter}
+      {stats}
       onViewChange={(view) => { activeView = view; closeSidebar(); }}
+      onFilterChange={(key, value) => {
+        if (value === undefined) {
+          // @ts-ignore
+          const { [key]: _, ...rest } = taskFilter;
+          taskFilter = rest;
+        } else {
+          taskFilter = { ...taskFilter, [key]: value };
+        }
+      }}
       onLogout={handleLogout}
       onClose={closeSidebar}
     />
@@ -549,9 +560,10 @@
 
   .dashboard {
     display: flex;
-    min-height: 100vh;
-    min-height: 100dvh;
+    height: 100vh;
+    height: 100dvh;
     position: relative;
+    overflow: hidden;
   }
 
   .sidebar-overlay {
@@ -566,8 +578,9 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
     min-width: 0;
+    height: 100%;
+    overflow: hidden;
   }
 
   .main-header {
@@ -578,6 +591,9 @@
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
     min-height: var(--header-height);
+    position: sticky;
+    top: 0;
+    z-index: 50;
   }
 
   .header-left {
@@ -673,6 +689,9 @@
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border-color);
     padding: 10px 24px;
+    position: sticky;
+    top: var(--header-height);
+    z-index: 49;
   }
 
   .filter-row-main {

@@ -1,6 +1,7 @@
 const { Client, GatewayIntentBits, Collection, ActivityType, MessageFlags, EmbedBuilder } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
+const { formatDateTime, formatDate } = require('../utils/timezone');
 
 const client = new Client({
   intents: [
@@ -105,7 +106,7 @@ function notifyTaskCreated(task, creatorName) {
     embed.setDescription(task.description.slice(0, 200));
   }
   if (task.due_date) {
-    embed.addFields({ name: '期限', value: new Date(task.due_date).toLocaleDateString('ja-JP'), inline: true });
+    embed.addFields({ name: '期限', value: formatDate(task.due_date), inline: true });
   }
 
   // 担当者がいる場合はメンション（全員タスクはメンションしない）

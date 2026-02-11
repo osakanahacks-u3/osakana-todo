@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, UserSelectBuilder, MessageFlags } = require('discord.js');
 const { GroupModel, UserModel } = require('../../database/models');
+const { formatDateTime } = require('../../utils/timezone');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -161,7 +162,7 @@ module.exports = {
       .setColor(parseInt(group.color.replace('#', ''), 16))
       .addFields(
         { name: 'メンバー数', value: `${members.length}人`, inline: true },
-        { name: '作成日', value: new Date(group.created_at).toLocaleString('ja-JP'), inline: true },
+        { name: '作成日', value: formatDateTime(group.created_at), inline: true },
       );
 
     if (group.description) {

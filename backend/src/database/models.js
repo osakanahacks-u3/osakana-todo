@@ -206,7 +206,8 @@ const TaskModel = {
       SELECT t.*, 
         u.username as creator_name,
         u.discord_id as creator_discord_id,
-        g.name as assigned_group_name
+        g.name as assigned_group_name,
+        (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id = t.id) as comment_count
       FROM tasks t
       LEFT JOIN users u ON t.created_by = u.id
       LEFT JOIN groups g ON t.assigned_group_id = g.id
@@ -245,17 +246,18 @@ const TaskModel = {
     }
 
     // ソート: priority = 優先度順, それ以外 = ID順（デフォルト: ID降順）
+    // 完了タスクは常に下に配置
     const sortOrder = filters.sortOrder === 'asc' ? 'ASC' : 'DESC';
     if (filters.sort === 'priority') {
       const priorityDir = filters.sortOrder === 'asc' ? 'DESC' : 'ASC';
-      query += ` ORDER BY CASE t.priority 
+      query += ` ORDER BY CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END ASC, CASE t.priority 
         WHEN 'urgent' THEN 0 
         WHEN 'high' THEN 1 
         WHEN 'medium' THEN 2 
         WHEN 'low' THEN 3 
         ELSE 4 END ${priorityDir}, t.id DESC`;
     } else {
-      query += ` ORDER BY t.id ${sortOrder}`;
+      query += ` ORDER BY CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END ASC, t.id ${sortOrder}`;
     }
 
     if (filters.limit) {
@@ -274,7 +276,8 @@ const TaskModel = {
     let query = `
       SELECT DISTINCT t.*, 
         u.username as creator_name,
-        g.name as assigned_group_name
+        g.name as assigned_group_name,
+        (SELECT COUNT(*) FROM task_comments tc WHERE tc.task_id = t.id) as comment_count
       FROM tasks t
       LEFT JOIN users u ON t.created_by = u.id
       LEFT JOIN groups g ON t.assigned_group_id = g.id
@@ -308,17 +311,18 @@ const TaskModel = {
     }
 
     // ソート
+    // 完了タスクは常に下に配置
     const sortOrder = filters.sortOrder === 'asc' ? 'ASC' : 'DESC';
     if (filters.sort === 'priority') {
       const priorityDir = filters.sortOrder === 'asc' ? 'DESC' : 'ASC';
-      query += ` ORDER BY CASE t.priority 
+      query += ` ORDER BY CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END ASC, CASE t.priority 
         WHEN 'urgent' THEN 0 
         WHEN 'high' THEN 1 
         WHEN 'medium' THEN 2 
         WHEN 'low' THEN 3 
         ELSE 4 END ${priorityDir}, t.id DESC`;
     } else {
-      query += ` ORDER BY t.id ${sortOrder}`;
+      query += ` ORDER BY CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END ASC, t.id ${sortOrder}`;
     }
 
     const tasks = db.prepare(query).all(...params);

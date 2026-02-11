@@ -74,6 +74,13 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// アプリ設定（フロントエンド用）
+app.get('/api/config', (req, res) => {
+  res.json({
+    timezone: process.env.TIMEZONE || 'Asia/Tokyo'
+  });
+});
+
 // 静的ファイルのホスティング（フロントエンド）
 const staticDir = path.join(__dirname, '../public');
 if (fs.existsSync(staticDir)) {
