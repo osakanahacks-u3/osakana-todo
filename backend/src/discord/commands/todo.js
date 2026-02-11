@@ -2,6 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const { TaskModel, UserModel, GroupModel } = require('../../database/models');
 const { createMainPanel, createStatsPanel } = require('../utils/panels');
 const { db } = require('../../database/init');
+const { formatDateTime, formatDate, formatShortDateTime } = require('../../utils/timezone');
 
 const STATUS_LABELS = {
   pending: '⏳ 未処理',
@@ -203,6 +204,17 @@ module.exports = {
         .addAttachmentOption(option =>
           option.setName('file').setDescription('インポートするJSONファイル').setRequired(true)
         )
+    )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('comment')
+        .setDescription('タスクにコメントを追加します')
+        .addIntegerOption(option =>
+          option.setName('id').setDescription('タスクID').setRequired(true)
+        )
+        .addStringOption(option =>
+          option.setName('content').setDescription('コメント内容').setRequired(true)
+        )
     ),
 
   async execute(interaction) {
@@ -244,6 +256,9 @@ module.exports = {
         break;
       case 'import':
         await this.importTasks(interaction);
+        break;
+      case 'comment':
+        await this.addComment(interaction);
         break;
     }
   },
@@ -352,7 +367,7 @@ module.exports = {
       .setDescription(
         tasks.map(t => 
           `**#${t.id}** ${STATUS_LABELS[t.status]} ${t.title}\n` +
-          `　├ 優先度: ${PRIORITY_LABELS[t.priority] || t.priority}\n` +
+          `　├ 優先度: ${PRIORITY_LABELS[t.priority] || t.priority || 'なし'}\n` +
           `　└ 担当: ${t.assigned_users?.length > 0 ? t.assigned_users.map(u => u.username).join(', ') : (t.assigned_user_name || t.assigned_group_name || (t.assigned_type === 'all' ? '全員' : '未割当'))}`
         ).join('\n\n')
       )
@@ -375,8 +390,8 @@ module.exports = {
       .setTitle(`📋 タスク #${task.id}: ${task.title}`)
       .setColor(task.status === 'completed' ? 0x2ecc71 : 0x3498db)
       .addFields(
-        { name: 'ステータス', value: STATUS_LABELS[task.status], inline: true },
-        { name: '優先度', value: PRIORITY_LABELS[task.priority], inline: true },
+        { name: 'ステータス', value: STATUS_LABELS[task.status] || task.status, inline: true },
+        { name: '優先度', value: PRIORITY_LABELS[task.priority] || task.priority || 'なし', inline: true },
         { name: '作成者', value: task.creator_name || '不明', inline: true },
       );
 
@@ -392,15 +407,21 @@ module.exports = {
 
     embed.addFields(
       { name: '担当', value: assignee, inline: true },
-      { name: '作成日', value: new Date(task.created_at).toLocaleString('ja-JP'), inline: true },
+      { name: '作成日', value: formatDateTime(task.created_at), inline: true },
     );
 
     if (task.due_date) {
-      embed.addFields({ name: '期限', value: new Date(task.due_date).toLocaleString('ja-JP'), inline: true });
+      embed.addFields({ name: '期限', value: formatDateTime(task.due_date), inline: true });
     }
 
     if (task.completed_at) {
-      embed.addFields({ name: '完了日', value: new Date(task.completed_at).toLocaleString('ja-JP'), inline: true });
+      embed.addFields({ name: '完了日', value: formatDateTime(task.completed_at), inline: true });
+    }
+
+    // コメント件数のみ表示
+    const comments = TaskModel.getComments(taskId);
+    if (comments.length > 0) {
+      embed.addFields({ name: '💬 コメント', value: `${comments.length}件のコメントがあります`, inline: true });
     }
 
     const row = new ActionRowBuilder()
@@ -409,6 +430,11 @@ module.exports = {
           .setCustomId(`todo_status_${task.id}`)
           .setLabel('ステータス変更')
           .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId(`task_comments_view:${task.id}`)
+          .setLabel(`コメント表示${comments.length > 0 ? ` (${comments.length})` : ''}`)
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('📝'),
         new ButtonBuilder()
           .setCustomId(`todo_delete_${task.id}`)
           .setLabel('削除')
@@ -454,19 +480,25 @@ module.exports = {
       return;
     }
 
-    TaskModel.delete(taskId);
+    const confirmRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`task_delete_confirm:${taskId}`)
+          .setLabel('削除する')
+          .setStyle(ButtonStyle.Danger)
+          .setEmoji('🗑️'),
+        new ButtonBuilder()
+          .setCustomId(`task_delete_cancel:${taskId}`)
+          .setLabel('キャンセル')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('❌'),
+      );
 
     await interaction.reply({
-      content: `🗑️ タスク #${taskId} 「${task.title}」を削除しました`,
+      content: `⚠️ タスク #${taskId}「${task.title}」を削除しますか？\nこの操作は取り消せません。`,
+      components: [confirmRow],
+      flags: MessageFlags.Ephemeral,
     });
-
-    // 通知送信 & メインパネル更新
-    if (interaction.client.notifyTaskDeleted) {
-      interaction.client.notifyTaskDeleted(task, `<@${interaction.user.id}>`);
-    }
-    if (interaction.client.updateMainPanel) {
-      interaction.client.updateMainPanel();
-    }
   },
 
   async assignTask(interaction) {
@@ -600,7 +632,7 @@ module.exports = {
     await interaction.reply({ embeds: [embed] });
 
     if (interaction.client.notifyTaskUpdated) {
-      interaction.client.notifyTaskUpdated(fullTask, `<@${interaction.user.id}>`, `担当者に ${targetLabel} を${actionLabel}`);
+      interaction.client.notifyTaskUpdated(fullTask, `<@${interaction.user.id}>`, `担当者に ${targetLabel} を${actionLabel}`, { assignmentChanged: true });
     }
     if (interaction.client.updateMainPanel) {
       interaction.client.updateMainPanel();
@@ -744,7 +776,7 @@ module.exports = {
       });
       content += '='.repeat(50) + '\n';
       content += `総タスク数: ${tasks.length}\n`;
-      content += `エクスポート日時: ${new Date().toLocaleString('ja-JP')}\n`;
+      content += `エクスポート日時: ${formatDateTime(new Date())}\n`;
       filename = 'tasks.txt';
     } else if (type === 'csv') {
       content = '\uFEFFID,タイトル,説明,ステータス,優先度,担当タイプ,担当者,担当グループ,作成者,作成日,期限,完了日\n';
@@ -880,6 +912,45 @@ module.exports = {
     } catch (e) {
       console.error('Import parse error:', e);
       await interaction.editReply({ content: '❌ ファイルの解析に失敗しました。正しいJSON形式か確認してください' });
+    }
+  },
+
+  async addComment(interaction) {
+    const taskId = interaction.options.getInteger('id');
+    const content = interaction.options.getString('content');
+
+    const task = TaskModel.findById(taskId);
+    if (!task) {
+      await interaction.reply({ content: '❌ タスクが見つかりませんでした', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    // ユーザー登録/更新
+    const user = UserModel.upsert(
+      interaction.user.id,
+      interaction.user.username,
+      interaction.user.discriminator,
+      interaction.user.avatar
+    );
+
+    TaskModel.addComment(taskId, user.id, content);
+
+    const comments = TaskModel.getComments(taskId);
+    const embed = new EmbedBuilder()
+      .setTitle('💬 コメントを追加しました')
+      .setColor(0xf39c12)
+      .addFields(
+        { name: 'タスク', value: `#${taskId} ${task.title}`, inline: false },
+        { name: 'コメント', value: content.slice(0, 1024), inline: false },
+        { name: 'コメント数', value: `${comments.length}件`, inline: true },
+      )
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed] });
+
+    // コメント通知
+    if (interaction.client.notifyCommentAdded) {
+      interaction.client.notifyCommentAdded(task, `<@${interaction.user.id}>`, content);
     }
   }
 };

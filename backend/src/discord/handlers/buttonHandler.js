@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, PermissionFlagsBits } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, PermissionFlagsBits, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { TaskModel, UserModel } = require('../../database/models');
 const { createMainPanel, createTaskListPanel, createTaskDetailPanel, createStatsPanel } = require('../utils/panels');
 const { db } = require('../../database/init');
@@ -187,7 +187,87 @@ module.exports = async function(interaction) {
     return;
   }
 
-  // タスク削除
+  // コメント追加
+  if (customId.startsWith('task_comment:')) {
+    const taskId = customId.replace('task_comment:', '');
+    const task = TaskModel.findById(taskId);
+    
+    if (!task) {
+      await interaction.reply({ content: '❌ タスクが見つかりません', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_task_comment:${taskId}`)
+      .setTitle(`#${taskId} にコメント追加`);
+
+    const commentInput = new TextInputBuilder()
+      .setCustomId('comment_content')
+      .setLabel('コメント内容')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(true)
+      .setMaxLength(500)
+      .setPlaceholder('コメントを入力してください...');
+
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(commentInput)
+    );
+
+    await interaction.showModal(modal);
+    return;
+  }
+
+  // コメント表示（別メッセージで表示）
+  if (customId.startsWith('task_comments_view:')) {
+    const taskId = customId.replace('task_comments_view:', '');
+    const task = TaskModel.findById(taskId);
+    
+    if (!task) {
+      await interaction.reply({ content: '❌ タスクが見つかりません', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const comments = TaskModel.getComments(taskId);
+    if (comments.length === 0) {
+      await interaction.reply({ content: '💬 コメントはまだありません', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    const { formatShortDateTime } = require('../../utils/timezone');
+    
+    // 複数embedに分割して表示（embed1つあたり4096文字制限対策）
+    const embeds = [];
+    let currentDesc = '';
+    let currentCount = 0;
+    
+    for (const c of comments) {
+      const date = formatShortDateTime(c.created_at);
+      const line = `**${c.username || '匿名'}** (${date})\n${c.content}\n`;
+      
+      if (currentDesc.length + line.length > 3900 || currentCount >= 10) {
+        embeds.push(new EmbedBuilder()
+          .setColor(0x5865F2)
+          .setDescription(currentDesc));
+        currentDesc = '';
+        currentCount = 0;
+      }
+      currentDesc += line + '\n';
+      currentCount++;
+    }
+    
+    if (currentDesc) {
+      embeds.push(new EmbedBuilder()
+        .setColor(0x5865F2)
+        .setDescription(currentDesc));
+    }
+    
+    embeds[0].setTitle(`💬 #${taskId} ${task.title} のコメント（${comments.length}件）`);
+    
+    await interaction.reply({ embeds: embeds.slice(0, 10), flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  // タスク削除（確認ポップアップ）
   if (customId.startsWith('task_delete:')) {
     const taskId = customId.replace('task_delete:', '');
     const task = TaskModel.findById(taskId);
@@ -197,8 +277,40 @@ module.exports = async function(interaction) {
       return;
     }
 
+    const confirmRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`task_delete_confirm:${taskId}`)
+          .setLabel('削除する')
+          .setStyle(ButtonStyle.Danger)
+          .setEmoji('🗑️'),
+        new ButtonBuilder()
+          .setCustomId(`task_delete_cancel:${taskId}`)
+          .setLabel('キャンセル')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('❌'),
+      );
+
+    await interaction.reply({
+      content: `⚠️ タスク #${taskId}「${task.title}」を削除しますか？\nこの操作は取り消せません。`,
+      components: [confirmRow],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  // タスク削除確認
+  if (customId.startsWith('task_delete_confirm:')) {
+    const taskId = customId.replace('task_delete_confirm:', '');
+    const task = TaskModel.findById(taskId);
+    
+    if (!task) {
+      await interaction.update({ content: '❌ タスクが見つかりません（既に削除済みの可能性があります）', components: [] });
+      return;
+    }
+
     TaskModel.delete(taskId);
-    await interaction.reply({ content: `🗑️ タスク「${task.title}」を削除しました`, flags: MessageFlags.Ephemeral });
+    await interaction.update({ content: `🗑️ タスク「${task.title}」を削除しました`, components: [] });
 
     // 通知送信 & メインパネル更新
     if (client.notifyTaskDeleted) {
@@ -207,6 +319,12 @@ module.exports = async function(interaction) {
     if (client.updateMainPanel) {
       client.updateMainPanel();
     }
+    return;
+  }
+
+  // タスク削除キャンセル
+  if (customId.startsWith('task_delete_cancel:')) {
+    await interaction.update({ content: '❌ 削除をキャンセルしました', components: [] });
     return;
   }
 
@@ -238,7 +356,7 @@ module.exports = async function(interaction) {
     return;
   }
 
-  // 削除ボタン（旧形式）
+  // 削除ボタン（旧形式）- 確認付き
   if (customId.startsWith('todo_delete_')) {
     const taskId = customId.replace('todo_delete_', '');
     const task = TaskModel.findById(taskId);
@@ -248,16 +366,25 @@ module.exports = async function(interaction) {
       return;
     }
 
-    TaskModel.delete(taskId);
-    await interaction.reply({ content: `🗑️ タスク「${task.title}」を削除しました` });
+    const confirmRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(`task_delete_confirm:${taskId}`)
+          .setLabel('削除する')
+          .setStyle(ButtonStyle.Danger)
+          .setEmoji('🗑️'),
+        new ButtonBuilder()
+          .setCustomId(`task_delete_cancel:${taskId}`)
+          .setLabel('キャンセル')
+          .setStyle(ButtonStyle.Secondary)
+          .setEmoji('❌'),
+      );
 
-    // 通知送信 & メインパネル更新
-    if (client.notifyTaskDeleted) {
-      client.notifyTaskDeleted(task, `<@${interaction.user.id}>`);
-    }
-    if (client.updateMainPanel) {
-      client.updateMainPanel();
-    }
+    await interaction.reply({
+      content: `⚠️ タスク #${taskId}「${task.title}」を削除しますか？\nこの操作は取り消せません。`,
+      components: [confirmRow],
+      flags: MessageFlags.Ephemeral,
+    });
     return;
   }
 

@@ -1,6 +1,7 @@
 const { EmbedBuilder, MessageFlags } = require('discord.js');
 const { TaskModel, UserModel } = require('../../database/models');
 const { createTaskDetailPanel } = require('../utils/panels');
+const { formatDate } = require('../../utils/timezone');
 
 const PRIORITY_LABELS = {
   low: '🟢 低',
@@ -63,7 +64,7 @@ module.exports = async function(interaction) {
     }
 
     if (dueDate) {
-      embed.addFields({ name: '期限', value: new Date(dueDate).toLocaleDateString('ja-JP'), inline: true });
+      embed.addFields({ name: '期限', value: formatDate(dueDate), inline: true });
     }
 
     embed.setFooter({ text: `ID: ${String(task.id).slice(0, 8)}...` });
@@ -131,6 +132,44 @@ module.exports = async function(interaction) {
     }
     if (client.updateMainPanel) {
       client.updateMainPanel();
+    }
+    return;
+  }
+
+  // コメント追加モーダル
+  if (customId.startsWith('modal_task_comment:')) {
+    const taskId = customId.replace('modal_task_comment:', '');
+    const content = interaction.fields.getTextInputValue('comment_content');
+
+    const task = TaskModel.findById(taskId);
+    if (!task) {
+      await interaction.reply({ content: '❌ タスクが見つかりません', flags: MessageFlags.Ephemeral });
+      return;
+    }
+
+    // ユーザー登録/更新
+    const user = UserModel.upsert(
+      interaction.user.id,
+      interaction.user.username,
+      interaction.user.discriminator,
+      interaction.user.avatar
+    );
+
+    TaskModel.addComment(taskId, user.id, content);
+
+    // 更新した詳細パネルを返す
+    const updatedTask = TaskModel.findById(taskId);
+    const panel = createTaskDetailPanel(updatedTask);
+
+    await interaction.reply({
+      content: '💬 コメントを追加しました',
+      ...panel,
+      flags: MessageFlags.Ephemeral
+    });
+
+    // コメント通知
+    if (client.notifyCommentAdded) {
+      client.notifyCommentAdded(updatedTask, `<@${interaction.user.id}>`, content);
     }
     return;
   }

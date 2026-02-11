@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 const { TaskModel, UserModel, GroupModel } = require('../../database/models');
+const { formatDate, formatShortDateTime } = require('../../utils/timezone');
 
 /**
  * 担当者表示文字列を生成（複数ユーザー対応）
@@ -114,7 +115,7 @@ function createTaskListPanel(tasks, title = 'タスク一覧', page = 1, totalPa
   const description = tasks.slice(0, 10).map((task, i) => {
     const status = statusEmojis[task.status] || '📌';
     const priority = priorityEmojis[task.priority] || '';
-    const due = task.due_date ? ` | 期限: ${new Date(task.due_date).toLocaleDateString('ja-JP')}` : '';
+    const due = task.due_date ? ` | 期限: ${formatDate(task.due_date)}` : '';
     return `${status} ${priority} **${task.title}**${due}\n└ ID: \`${String(task.id).slice(0, 8)}\``;
   }).join('\n\n');
 
@@ -206,7 +207,7 @@ function createTaskDetailPanel(task) {
     .setDescription(task.description || '*説明なし*')
     .addFields(
       { name: 'ステータス', value: statusLabels[task.status] || task.status, inline: true },
-      { name: '優先度', value: priorityLabels[task.priority] || task.priority, inline: true },
+      { name: '優先度', value: priorityLabels[task.priority] || task.priority || 'なし', inline: true },
       { name: '割り当て', value: getAssigneeDisplay(task), inline: true },
     )
     .setFooter({ text: `ID: ${task.id}` })
@@ -217,9 +218,15 @@ function createTaskDetailPanel(task) {
     const isOverdue = dueDate < new Date() && task.status !== 'completed';
     embed.addFields({
       name: '期限',
-      value: `${isOverdue ? '⚠️ ' : ''}${dueDate.toLocaleDateString('ja-JP')}${isOverdue ? ' (期限切れ)' : ''}`,
+      value: `${isOverdue ? '⚠️ ' : ''}${formatDate(task.due_date)}${isOverdue ? ' (期限切れ)' : ''}`,
       inline: true,
     });
+  }
+
+  // コメント件数のみ表示（詳細は別ボタンで）
+  const comments = TaskModel.getComments(task.id);
+  if (comments.length > 0) {
+    embed.addFields({ name: '💬 コメント', value: `${comments.length}件のコメントがあります`, inline: true });
   }
 
   const row1 = new ActionRowBuilder()
@@ -267,10 +274,24 @@ function createTaskDetailPanel(task) {
         .setStyle(ButtonStyle.Primary)
         .setEmoji('✏️'),
       new ButtonBuilder()
+        .setCustomId(`task_comment:${task.id}`)
+        .setLabel('コメント追加')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('💬'),
+      new ButtonBuilder()
+        .setCustomId(`task_comments_view:${task.id}`)
+        .setLabel(`コメント表示${comments.length > 0 ? ` (${comments.length})` : ''}`)
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('📝'),
+      new ButtonBuilder()
         .setCustomId(`task_delete:${task.id}`)
         .setLabel('削除')
         .setStyle(ButtonStyle.Danger)
         .setEmoji('🗑️'),
+    );
+
+  const row5 = new ActionRowBuilder()
+    .addComponents(
       new ButtonBuilder()
         .setCustomId('panel_back_list')
         .setLabel('一覧に戻る')
@@ -283,7 +304,7 @@ function createTaskDetailPanel(task) {
         .setEmoji('🏠'),
     );
 
-  return { embeds: [embed], components: [row1, row2, row3, row4] };
+  return { embeds: [embed], components: [row1, row2, row3, row4, row5] };
 }
 
 /**

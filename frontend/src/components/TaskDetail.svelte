@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { tasks } from '../lib/api';
+  import { tasks, config } from '../lib/api';
 
   interface Props {
     taskId: string;
@@ -50,6 +50,7 @@
 
   onMount(() => {
     loadTask();
+    config.getTimezone().then(tz => { timezone = tz; });
   });
 
   async function loadTask() {
@@ -178,15 +179,40 @@
     error = '';
 
     try {
-      await tasks.update(taskId, {
-        title: editTitle.trim(),
-        description: editDescription.trim() || null,
-        priority: editPriority,
-        dueDate: editDueDate || null,
-        assignedType: editAssignType === 'none' ? null : (editAssignType === 'all' ? 'all' : (editAssignedUserIds.length > 0 ? 'user' : (editAssignedGroupIds.length > 0 ? 'group' : null))),
-        assignedUserIds: editAssignType === 'mixed' ? editAssignedUserIds : [],
-        assignedGroupIds: editAssignType === 'mixed' ? editAssignedGroupIds : [],
-      });
+      // 変更があったフィールドのみを送信
+      const updateData: Record<string, any> = {};
+
+      if (editTitle.trim() !== task.title) {
+        updateData.title = editTitle.trim();
+      }
+      const newDesc = editDescription.trim() || null;
+      const oldDesc = task.description || null;
+      if (newDesc !== oldDesc) {
+        updateData.description = newDesc;
+      }
+      if (editPriority !== task.priority) {
+        updateData.priority = editPriority;
+      }
+      const newDue = editDueDate || null;
+      const oldDue = task.due_date ? task.due_date.split('T')[0] : null;
+      if (newDue !== oldDue) {
+        updateData.dueDate = newDue;
+      }
+
+      // 担当の変更を検出
+      const oldAssignType = task.assigned_type === 'all' ? 'all' : 
+        ((task.assigned_users && task.assigned_users.length > 0) || (task.assigned_groups && task.assigned_groups.length > 0) || task.assigned_group_id) ? 'mixed' : 'none';
+      if (editAssignType !== oldAssignType || editAssignType === 'mixed') {
+        updateData.assignedType = editAssignType === 'none' ? null : (editAssignType === 'all' ? 'all' : (editAssignedUserIds.length > 0 ? 'user' : (editAssignedGroupIds.length > 0 ? 'group' : null)));
+        updateData.assignedUserIds = editAssignType === 'mixed' ? editAssignedUserIds : [];
+        updateData.assignedGroupIds = editAssignType === 'mixed' ? editAssignedGroupIds : [];
+      }
+
+      // 変更があった場合のみAPIを呼ぶ
+      if (Object.keys(updateData).length > 0) {
+        await tasks.update(taskId, updateData);
+      }
+
       // 編集モードを解除し、タスクを再取得してインプレースで反映
       editMode = false;
       task = await tasks.get(taskId);
@@ -238,9 +264,11 @@
     }
   }
 
+  let timezone = $state('Asia/Tokyo');
+
   function formatDate(dateStr: string): string {
     if (!dateStr) return '未設定';
-    return new Date(dateStr).toLocaleString('ja-JP');
+    return new Date(dateStr).toLocaleString('ja-JP', { timeZone: timezone });
   }
 
   function getAssignee(): string {
@@ -1043,52 +1071,52 @@
 
     .quick-assign-controls {
       flex-direction: column;
-      gap: 12px;
+      gap: 8px;
     }
 
     .quick-assign-controls select {
       width: 100%;
-      padding: 14px 16px;
-      font-size: 16px;
-      min-height: 48px;
+      padding: 10px 12px;
+      font-size: 14px;
+      min-height: 40px;
     }
 
     .quick-assign-users {
-      padding: 12px;
-      gap: 10px;
+      padding: 8px;
+      gap: 6px;
     }
 
     .checkbox-label-small {
-      font-size: 14px;
-      padding: 8px 12px;
-      min-height: 40px;
+      font-size: 12px;
+      padding: 4px 8px;
+      min-height: 32px;
     }
 
     .checkbox-label-small input {
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
     }
 
     .btn-small {
-      padding: 10px 16px;
-      font-size: 14px;
-      min-height: 44px;
+      padding: 8px 14px;
+      font-size: 13px;
+      min-height: 36px;
     }
 
     .user-checkboxes {
-      padding: 12px;
-      gap: 10px;
+      padding: 8px;
+      gap: 6px;
     }
 
     .checkbox-label {
-      font-size: 14px;
-      padding: 8px 12px;
-      min-height: 40px;
+      font-size: 13px;
+      padding: 4px 8px;
+      min-height: 32px;
     }
 
     .checkbox-label input {
-      width: 18px;
-      height: 18px;
+      width: 16px;
+      height: 16px;
     }
 
     .comment-form {

@@ -3,6 +3,7 @@ const { TaskModel, UserModel } = require('../database/models');
 const { authMiddleware } = require('../middleware/auth');
 const { checkPermissionByDiscordId } = require('../middleware/permission');
 const { db } = require('../database/init');
+const { formatDateTime } = require('../utils/timezone');
 
 const router = express.Router();
 
@@ -67,7 +68,7 @@ router.get('/txt', (req, res) => {
 
   content += '='.repeat(50) + '\n';
   content += `総タスク数: ${tasks.length}\n`;
-  content += `エクスポート日時: ${new Date().toLocaleString('ja-JP')}\n`;
+  content += `エクスポート日時: ${formatDateTime(new Date())}\n`;
 
   // UTF-8 BOM付きで送信（iPhone Safari文字化け対策）
   const bom = '\uFEFF';

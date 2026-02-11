@@ -288,3 +288,24 @@ export const exportTasks = {
     return response.json();
   }
 };
+
+// アプリ設定
+let _timezone: string | null = null;
+
+export const config = {
+  async getTimezone(): Promise<string> {
+    if (_timezone) return _timezone;
+    try {
+      const response = await fetch(`${API_BASE}/api/config`);
+      if (response.ok) {
+        const data = await response.json();
+        _timezone = data.timezone || 'Asia/Tokyo';
+      } else {
+        _timezone = 'Asia/Tokyo';
+      }
+    } catch {
+      _timezone = 'Asia/Tokyo';
+    }
+    return _timezone!;
+  }
+};
